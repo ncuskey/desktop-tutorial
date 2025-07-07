@@ -1,5 +1,10 @@
-# Welcome to GitHub Desktop!
+# MapEngine Web App
 
-This is your README. READMEs are where you can communicate what your project is and how to use it.
+This project uses React and TypeScript to render and manipulate fantasy maps in the browser. A WebWorker (`src/worker.ts`) performs heavy map generation tasks so the UI stays responsive.
 
-Write your name on line 6, save it, and then head back to GitHub Desktop.
+## Getting Started
+
+```bash
+npm install
+npm start          # launches the development server
+npm test           # runs unit tests
