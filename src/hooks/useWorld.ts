@@ -20,6 +20,13 @@ import {
   generateStates,
   generateRoads,
 } from '../workerClient';
+import {
+  initializeLore,
+  applyOutcome,
+  generateAdventureHooks,
+  type QuestOutcome,
+  type WorldLore,
+} from '../loreClient';
 
 /** Adventure hook description. */
 export interface AdventureHook {
@@ -38,8 +45,11 @@ export interface WorldState {
   mapData?: MapData;
   states?: State[];
   roads?: Road[];
+  lore?: WorldLore;
   hooks: AdventureHook[];
 }
+
+type Status = 'loading' | 'ready' | 'updatingHooks' | 'error';
 
 const STORAGE_KEY = 'world-state';
 
@@ -47,29 +57,41 @@ const STORAGE_KEY = 'world-state';
  * Custom hook managing world generation and persistence.
  */
 export function useWorld() {
-  const [world, setWorld] = useState<WorldState>(() => {
+  const initialWorld: WorldState = (() => {
     const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(STORAGE_KEY) : null;
     if (raw) {
       try {
         const parsed: WorldState = JSON.parse(raw);
-        return { ...parsed, hooks: parsed.hooks || [] };
+        return { ...parsed, hooks: parsed.hooks || [], lore: parsed.lore };
       } catch {
         // TODO: better error handling
       }
     }
     return { hooks: [] };
-  });
+  })();
+
+  const [world, setWorld] = useState<WorldState>(initialWorld);
+
+  const [lore, setLore] = useState<WorldLore | undefined>(initialWorld.lore);
+
+  const [status, setStatus] = useState<Status>(initialWorld.mesh ? 'ready' : 'loading');
+  const [error, setError] = useState<string | null>(null);
 
   // Persist world whenever it changes
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...world, hooks: world.hooks }));
+      localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({ ...world, hooks: world.hooks, lore: world.lore })
+      );
     } catch {
       // TODO: better error handling
     }
   }, [world]);
 
   const initWorld = useCallback(async () => {
+    setStatus('loading');
+    setError(null);
     try {
       const { mesh, peaks } = await generateMesh();
       setWorld((w) => ({ ...w, mesh, peaks }));
@@ -88,7 +110,7 @@ export function useWorld() {
       const rivers = await assignRivers({ mesh }, riverParams);
       setWorld((w) => ({ ...w, flowT: rivers.flowT }));
 
-      const mapData = await loadMapJSON('/maps/example.map');
+      const mapData = await loadMapJSON('/maps/sample.map.json');
       setWorld((w) => ({ ...w, mapData }));
 
       const states = await generateStates(mapData.cells as Cell[], { count: 5 } as StateOptions);
@@ -96,8 +118,16 @@ export function useWorld() {
 
       const roads = await generateRoads(mapData.burgs as Burg[], { maxDistance: 50 } as RoadOptions);
       setWorld((w) => ({ ...w, roads }));
+
+      const newLore = await initializeLore(states);
+      setLore(newLore);
+      const hooks = await generateAdventureHooks(newLore);
+      setWorld((w) => ({ ...w, hooks }));
+      setStatus('ready');
     } catch (err) {
       console.error(err);
+      setStatus('error');
+      setError(err instanceof Error ? err.message : String(err));
     }
   }, []);
 
@@ -107,13 +137,21 @@ export function useWorld() {
     }
   }, [world.mesh, initWorld]);
 
-  const completeHook = useCallback((id: string, success: boolean) => {
-    // TODO: send to LoreEngine worker when integrated
-    setWorld((w) => ({
-      ...w,
-      hooks: w.hooks.map((h) => (h.id === id ? { ...h, completed: success } : h)),
-    }));
+  const completeHook = useCallback(async (id: string, success: boolean) => {
+    setStatus('updatingHooks');
+    const outcome: QuestOutcome = { questID: id, success };
+    try {
+      const newLore = await applyOutcome(outcome);
+      setLore(newLore);
+      const newHooks = await generateAdventureHooks(newLore);
+      setWorld((w) => ({ ...w, hooks: newHooks }));
+      setStatus('ready');
+    } catch (err) {
+      console.error(err);
+      setStatus('error');
+      setError(err instanceof Error ? err.message : String(err));
+    }
   }, []);
 
-  return { world, completeHook };
+  return { world, status, error, completeHook };
 }

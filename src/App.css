@@ -1,0 +1,15 @@
+/* App.css */
+.App {
+  display: flex;
+  height: 100vh;
+  margin: 0;
+}
+.MapPane {
+  flex: 3;
+  border-right: 1px solid #ccc;
+}
+.HookPane {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem;
+}
