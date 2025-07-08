@@ -1,10 +1,30 @@
 {
-  "name": "mapengine-web-app",
+  "name": "fantasy-map-webapp",
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "start": "echo 'No start script defined'",
-    "build": "echo 'No build script defined'",
-    "test": "echo 'No tests specified'"
+    "start": "react-scripts start",
+    "build": "react-scripts build",
+    "test": "react-scripts test --env=jsdom",
+    "eject": "react-scripts eject"
+  },
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "@testing-library/react": "^14.0.0",
+    "typescript": "^5.1.0",
+    "react-scripts": "5.0.1"
+  },
+  "browserslist": {
+    "production": [
+      "defaults"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
   }
 }
