@@ -11,7 +11,6 @@ const App: React.FC = () => {
   if (status === 'loading') {
     return <div>Loading…</div>;
   }
-
   if (status === 'error') {
     return <div className="Error">Error: {error}</div>;
   }
@@ -22,7 +21,11 @@ const App: React.FC = () => {
         <MapCanvas mesh={world.mesh} states={world.states} />
       </div>
       <div className="HookPane">
-        <HookList hooks={world.hooks} status={status} completeHook={completeHook} />
+        <HookList
+          hooks={world.hooks}
+          status={status}
+          completeHook={completeHook}
+        />
       </div>
     </div>
   );
