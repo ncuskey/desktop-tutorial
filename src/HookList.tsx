@@ -3,13 +3,14 @@ import type { AdventureHook } from './hooks/useWorld';
 
 interface Props {
   hooks: AdventureHook[];
+  status: string;
   completeHook(id: string, success: boolean): void;
 }
 
 /**
  * Simple list of adventure hooks with completion buttons.
  */
-const HookList: React.FC<Props> = ({ hooks, completeHook }) => {
+const HookList: React.FC<Props> = ({ hooks, status, completeHook }) => {
   return (
     <ul>
       {hooks.map((hook) => (
@@ -18,7 +19,12 @@ const HookList: React.FC<Props> = ({ hooks, completeHook }) => {
           {hook.completed ? (
             <span> - completed</span>
           ) : (
-            <button onClick={() => completeHook(hook.id, true)}>Complete</button>
+            <button
+              onClick={() => completeHook(hook.id, true)}
+              disabled={status === 'updatingHooks'}
+            >
+              {status === 'updatingHooks' ? '…' : 'Complete'}
+            </button>
           )}
         </li>
       ))}
