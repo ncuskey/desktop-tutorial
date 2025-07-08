@@ -6,5 +6,11 @@ This project uses React and TypeScript to render and manipulate fantasy maps in 
 
 ```bash
 npm install
-npm start          # launches the development server
-npm test           # runs unit tests
+npm start      # launches CRA dev server
+npm run build  # creates production build
+npm test       # runs unit tests
+```
+
+## Public Assets
+
+The sample map JSON is served from /maps/sample.map.json in the public folder.
