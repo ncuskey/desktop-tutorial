@@ -41,13 +41,15 @@ export interface WorldState {
   hooks: AdventureHook[];
 }
 
+type Status = 'loading' | 'ready' | 'error';
+
 const STORAGE_KEY = 'world-state';
 
 /**
  * Custom hook managing world generation and persistence.
  */
 export function useWorld() {
-  const [world, setWorld] = useState<WorldState>(() => {
+  const initialWorld: WorldState = (() => {
     const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(STORAGE_KEY) : null;
     if (raw) {
       try {
@@ -58,7 +60,12 @@ export function useWorld() {
       }
     }
     return { hooks: [] };
-  });
+  })();
+
+  const [world, setWorld] = useState<WorldState>(initialWorld);
+
+  const [status, setStatus] = useState<Status>(initialWorld.mesh ? 'ready' : 'loading');
+  const [error, setError] = useState<string | null>(null);
 
   // Persist world whenever it changes
   useEffect(() => {
@@ -70,6 +77,8 @@ export function useWorld() {
   }, [world]);
 
   const initWorld = useCallback(async () => {
+    setStatus('loading');
+    setError(null);
     try {
       const { mesh, peaks } = await generateMesh();
       setWorld((w) => ({ ...w, mesh, peaks }));
@@ -88,7 +97,7 @@ export function useWorld() {
       const rivers = await assignRivers({ mesh }, riverParams);
       setWorld((w) => ({ ...w, flowT: rivers.flowT }));
 
-      const mapData = await loadMapJSON('/maps/example.map');
+      const mapData = await loadMapJSON('/maps/sample.map.json');
       setWorld((w) => ({ ...w, mapData }));
 
       const states = await generateStates(mapData.cells as Cell[], { count: 5 } as StateOptions);
@@ -96,8 +105,11 @@ export function useWorld() {
 
       const roads = await generateRoads(mapData.burgs as Burg[], { maxDistance: 50 } as RoadOptions);
       setWorld((w) => ({ ...w, roads }));
+      setStatus('ready');
     } catch (err) {
       console.error(err);
+      setStatus('error');
+      setError(err instanceof Error ? err.message : String(err));
     }
   }, []);
 
@@ -115,5 +127,5 @@ export function useWorld() {
     }));
   }, []);
 
-  return { world, completeHook };
+  return { world, status, error, completeHook };
 }
