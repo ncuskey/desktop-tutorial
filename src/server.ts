@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from 'express';
 import { generateLore } from './api/lore';
 import { generateAdventureHooksFromLore } from './api/hooks';
