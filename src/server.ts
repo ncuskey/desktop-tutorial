@@ -36,7 +36,9 @@ app.post('/api/hooks', async (req, res) => {
   }
 });
 
-const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
-  console.log(`Server listening on ${PORT}`);
-});
+export default app;
+
+if (require.main === module) {
+  const PORT = process.env.PORT || 3001;
+  app.listen(PORT, () => console.log(`Server listening on ${PORT}`));
+}
