@@ -1,10 +1,13 @@
 {
+  "extends": "react-scripts/tsconfig.json",
   "compilerOptions": {
-    "esModuleInterop": true,
-    "resolveJsonModule": true,
-    "target": "es6",
-    "module": "commonjs",
-    "strict": true
+    "jsx": "react-jsx"
   },
-  "include": ["src/**/*", "__tests__/**/*"]
+  "include": [
+    "src",
+    "__tests__"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
 }
