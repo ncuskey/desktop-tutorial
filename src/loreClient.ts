@@ -16,26 +16,6 @@ export interface WorldLore {
   // TODO: add more descriptive fields as needed
 }
 
-const API_URL = 'https://api.openai.com/v1/chat/completions';
-// TODO: insert API key securely
-const API_KEY = '<API_KEY>';
-
-type ChatMessage = { role: 'system' | 'user' | 'assistant'; content: string };
-
-async function callChatAPI(messages: ChatMessage[]) {
-  const res = await fetch(API_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${API_KEY}`,
-    },
-    body: JSON.stringify({ model: 'gpt-3.5-turbo', messages }),
-  });
-  if (!res.ok) {
-    throw new Error(`OpenAI request failed: ${res.status}`);
-  }
-  return res.json();
-}
 
 /**
  * Initialize lore for a newly generated world.
@@ -50,10 +30,16 @@ async function callChatAPI(messages: ChatMessage[]) {
  * The assistant should respond with JSON text matching `WorldLore`.
  */
 export async function initializeLore(states: State[]): Promise<WorldLore> {
-  const prompt = `Create initial world lore using these states: ${JSON.stringify(states)}. Return JSON.`;
-  const data = await callChatAPI([{ role: 'user', content: prompt }]);
-  // TODO: handle parse errors
-  return JSON.parse(data.choices[0].message.content) as WorldLore;
+  const topic = `Create initial world lore using these states: ${JSON.stringify(states)}`;
+  const res = await fetch('/api/lore', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ topic }),
+  });
+  if (!res.ok) {
+    throw new Error('Lore API error');
+  }
+  return res.json() as Promise<WorldLore>;
 }
 
 /**
@@ -63,9 +49,16 @@ export async function initializeLore(states: State[]): Promise<WorldLore> {
  * updated lore in JSON format.
  */
 export async function applyOutcome(outcome: QuestOutcome): Promise<WorldLore> {
-  const prompt = `Given the current lore and the party completed quest ${outcome.questID} (${outcome.success}), return updated lore as JSON.`;
-  const data = await callChatAPI([{ role: 'user', content: prompt }]);
-  return JSON.parse(data.choices[0].message.content) as WorldLore;
+  const topic = `Quest ${outcome.questID} ${outcome.success ? 'succeeded' : 'failed'}`;
+  const res = await fetch('/api/lore', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ topic }),
+  });
+  if (!res.ok) {
+    throw new Error('Lore API error');
+  }
+  return res.json() as Promise<WorldLore>;
 }
 
 /**
@@ -77,8 +70,14 @@ export async function applyOutcome(outcome: QuestOutcome): Promise<WorldLore> {
  * ```
  */
 export async function generateAdventureHooks(lore: WorldLore): Promise<AdventureHook[]> {
-  const prompt = `Given world lore: ${JSON.stringify(lore)} generate 3 new adventure hooks as JSON array.`;
-  const data = await callChatAPI([{ role: 'user', content: prompt }]);
-  return JSON.parse(data.choices[0].message.content) as AdventureHook[];
+  const res = await fetch('/api/hooks', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ lore }),
+  });
+  if (!res.ok) {
+    throw new Error('Hooks API error');
+  }
+  return res.json() as Promise<AdventureHook[]>;
 }
 
