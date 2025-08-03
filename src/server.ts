@@ -1,12 +1,12 @@
 import 'dotenv/config';
-import express from 'express';
+import express, { Request, Response } from 'express';
 import { generateLore } from './api/lore';
 import { generateAdventureHooksFromLore } from './api/hooks';
 
 const app = express();
 app.use(express.json());
 
-app.post('/api/lore', async (req, res) => {
+app.post('/api/lore', async (req: Request, res: Response) => {
   const { topic } = req.body as { topic?: string };
   if (!topic) {
     res.status(400).json({ error: 'Missing topic' });
@@ -21,7 +21,7 @@ app.post('/api/lore', async (req, res) => {
   }
 });
 
-app.post('/api/hooks', async (req, res) => {
+app.post('/api/hooks', async (req: Request, res: Response) => {
   const { lore } = req.body as { lore?: any };
   if (!lore) {
     res.status(400).json({ error: 'Missing lore' });

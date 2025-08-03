@@ -1,13 +1,14 @@
 {
-  "extends": "./node_modules/react-scripts/tsconfig.json",
   "compilerOptions": {
-    "jsx": "react-jsx"
+    "target": "ES2019",
+    "module": "commonjs",
+    "jsx": "react-jsx",
+    "esModuleInterop": true,
+    "strict": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true
   },
-  "include": [
-    "src",
-    "__tests__"
-  ],
-  "exclude": [
-    "node_modules"
-  ]
+  "include": ["src", "__tests__"],
+  "exclude": ["node_modules"]
 }
+
