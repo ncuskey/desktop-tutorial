@@ -94,7 +94,12 @@ def load_ohlcv_csv(path: str | Path) -> pd.DataFrame:
 def resample_ohlcv(df: pd.DataFrame, timeframe: str) -> pd.DataFrame:
     """Resample long-form hourly data into larger bars per symbol."""
 
-    rule = timeframe.upper()
+    rule_mapping = {
+        "H1": "1h",
+        "H4": "4h",
+        "D1": "1D",
+    }
+    rule = rule_mapping.get(timeframe.upper(), timeframe)
     frames: list[pd.DataFrame] = []
     for symbol, group in df.groupby("symbol", sort=True):
         resampled = (

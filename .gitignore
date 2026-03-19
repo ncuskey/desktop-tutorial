@@ -20,3 +20,4 @@ __pycache__/
 .venv/
 research_outputs/
 sample_data/fx_hourly_sample.csv
+*.egg-info/
