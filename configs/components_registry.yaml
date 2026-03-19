@@ -1,0 +1,28 @@
+strategy:
+  ma_crossover:
+    path: strategies.trend:ma_crossover_signals
+    adapter: function_strategy
+  rsi_reversal:
+    path: strategies.mean_reversion:rsi_reversal_signals
+    adapter: function_strategy
+  donchian_breakout:
+    path: strategies.trend:donchian_breakout_signals
+    adapter: function_strategy
+  bollinger_fade:
+    path: strategies.mean_reversion:bollinger_fade_signals
+    adapter: function_strategy
+
+orchestrator:
+  regime_specialist:
+    path: orchestrators.regime_specialist:RegimeSpecialistOrchestrator
+    adapter: class
+
+metafilter:
+  rule_based_meta_filter:
+    path: metalabel.trade_filter:RuleBasedMetaFilter
+    adapter: class
+
+evaluator:
+  walk_forward:
+    path: research.walk_forward:run_walk_forward
+    adapter: class
