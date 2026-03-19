@@ -1,16 +1,39 @@
-# MapEngine Web App
+# Forex Strategy Research Lab
 
-This project uses React and TypeScript to render and manipulate fantasy maps in the browser. A WebWorker (`src/worker.ts`) performs heavy map generation tasks so the UI stays responsive.
+Production-oriented quantitative research framework for evaluating FX strategies, combinations, and orchestration layers under realistic assumptions.
 
-## Getting Started
+## What this repo contains
+
+- **Data & features**: `data/`, `regime/`
+- **Strategies**: `strategies/`
+- **Combinations & orchestration**: `combinations/`, `orchestrators/`
+- **Execution & risk controls**: `execution/`
+- **Metrics & validation**: `metrics/`, `research/`
+- **Meta-labeling decision layer**: `metalabel/`
+- **Runnable experiment entrypoint**: `prototype.py`
+
+## Core capabilities
+
+- Multi-symbol data support (`EURUSD`, `GBPUSD`, `USDJPY`, `AUDUSD`)
+- Multi-timeframe support (`H1`, `H4`, `D1`)
+- Cost-aware simulation (spread, slippage, commissions)
+- Regime detection + stable regime state machine
+- Specialist sleeves + regime-aware orchestration
+- Strict walk-forward validation
+- Bootstrap robustness analysis
+- Meta-label trade filtering
+- Experiment tracking to SQLite
+
+## Quick start
 
 ```bash
-npm install
-npm start      # launches CRA dev server
-npm run build  # creates production build
-npm test       # runs unit tests
+python3 -m pip install -r requirements.txt
+python3 prototype.py
 ```
 
-## Public Assets
+Artifacts are written to `outputs/`.
 
-The sample map JSON is served from /maps/sample.map.json in the public folder.
+## Notes
+
+- Current default run uses generated sample OHLCV data (`data/sample_ohlcv.csv`).
+- To increase confidence, integrate external historical datasets and rerun strict walk-forward experiments across symbols/timeframes/providers.
