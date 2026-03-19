@@ -218,6 +218,7 @@ def _save_filtered_vs_unfiltered_equity(
     timestamps: pd.Series,
     unfiltered_equity: pd.Series,
     filtered_equity: pd.Series,
+    filename: str = "filtered_vs_unfiltered_equity.png",
 ) -> None:
     fig, ax = plt.subplots(figsize=(12, 5))
     ax.plot(timestamps, unfiltered_equity.values, label="Orchestrator (Unfiltered)", alpha=0.85)
@@ -227,7 +228,7 @@ def _save_filtered_vs_unfiltered_equity(
     ax.set_ylabel("Equity")
     ax.legend(loc="best")
     fig.tight_layout()
-    fig.savefig(OUTPUT_DIR / "filtered_vs_unfiltered_equity.png", dpi=150)
+    fig.savefig(OUTPUT_DIR / filename, dpi=150)
     plt.close(fig)
 
 
@@ -605,6 +606,23 @@ def main() -> None:
         timeframe=timeframe,
         regime_column="stable_regime_label",
     )
+    wf_orchestrated_stable_meta = run_walk_forward(
+        df=df,
+        strategy_fn=lambda frame, params: _orchestrated_strategy(frame, params, use_stable=True),
+        param_grid=orchestrated_grid,
+        train_bars=train_bars,
+        test_bars=test_bars,
+        cost_model=cost_model,
+        timeframe=timeframe,
+        regime_column="stable_regime_label",
+        meta_filter_class=RuleBasedMetaFilter,
+        meta_filter_kwargs={"target_filter_rate": 0.4},
+        meta_feature_builder=build_trade_meta_features,
+        meta_label_builder=create_trade_success_labels,
+        meta_label_kwargs={"horizon_bars": 24, "success_threshold": 0.0002},
+        meta_apply_fn=apply_meta_trade_filter,
+        meta_min_train_samples=30,
+    )
 
     ma_bootstrap_dist, ma_bootstrap_summary = bootstrap_returns(
         wf_ma.combined_returns, n_bootstrap=300
@@ -670,6 +688,18 @@ def main() -> None:
         timeframe,
         wf_orchestrated_stable.aggregate_metrics,
     )
+    if wf_orchestrated_stable_meta.filtered_aggregate_metrics is not None:
+        tracker.log_run(
+            "orchestrated_stable_meta_walk_forward",
+            {
+                "meta_filter": "RuleBasedMetaFilter",
+                "label_horizon_bars": 24,
+                "success_threshold": 0.0002,
+            },
+            symbol,
+            timeframe,
+            wf_orchestrated_stable_meta.filtered_aggregate_metrics,
+        )
 
     regime_attribution = pd.concat(
         [
@@ -781,6 +811,14 @@ def main() -> None:
             "Regime Orchestrator Stable", wf_orchestrated_stable.aggregate_metrics, "WalkForward"
         ),
     ]
+    if wf_orchestrated_stable_meta.filtered_aggregate_metrics is not None:
+        comparison_rows.append(
+            _strategy_metrics_row(
+                "Regime Orchestrator Stable + MetaFilter",
+                wf_orchestrated_stable_meta.filtered_aggregate_metrics,
+                "WalkForward",
+            )
+        )
     specialist_vs_orchestrated = _build_strategy_comparison_table(comparison_rows)
 
     stable_vs_raw_orchestrator = _build_strategy_comparison_table(
@@ -904,6 +942,48 @@ def main() -> None:
             trade_quality_distribution["Count"] / trade_quality_distribution["Count"].sum()
         )
 
+    # Strict walk-forward meta-filter validation outputs.
+    wf_meta_filter_comparison = pd.DataFrame()
+    wf_meta_filter_folds = pd.DataFrame()
+    wf_meta_filter_diagnostics = pd.DataFrame()
+    if wf_orchestrated_stable_meta.filtered_aggregate_metrics is not None:
+        meta_diag = wf_orchestrated_stable_meta.meta_filter_diagnostics or {}
+        wf_meta_filter_comparison = pd.DataFrame(
+            [
+                {
+                    "Strategy": "Stable Orchestrator (WF Unfiltered)",
+                    **wf_orchestrated_stable_meta.aggregate_metrics,
+                    "AvgFilterRateByFold": 0.0,
+                },
+                {
+                    "Strategy": "Stable Orchestrator + MetaFilter (WF)",
+                    **wf_orchestrated_stable_meta.filtered_aggregate_metrics,
+                    "AvgFilterRateByFold": float(meta_diag.get("AvgFilterRateByFold", 0.0)),
+                },
+            ]
+        )
+        desired_fold_cols = [
+            "fold_start",
+            "fold_train_end",
+            "fold_test_end",
+            "meta_filter_rate",
+            "meta_threshold",
+            "test_Sharpe_unfiltered",
+            "test_Sharpe_filtered",
+            "test_CAGR_unfiltered",
+            "test_CAGR_filtered",
+            "test_MaxDrawdown_unfiltered",
+            "test_MaxDrawdown_filtered",
+            "test_Expectancy_unfiltered",
+            "test_Expectancy_filtered",
+            "meta_state",
+        ]
+        present_cols = [
+            c for c in desired_fold_cols if c in wf_orchestrated_stable_meta.fold_results.columns
+        ]
+        wf_meta_filter_folds = wf_orchestrated_stable_meta.fold_results[present_cols].copy()
+        wf_meta_filter_diagnostics = pd.DataFrame([meta_diag])
+
     metrics_table = pd.DataFrame(
         [
             {"Strategy": "MA Crossover (In-Sample)", **strategy_metrics["MA Baseline"]},
@@ -924,6 +1004,21 @@ def main() -> None:
             {"Strategy": "Orchestrated Stable (Walk-Forward)", **wf_orchestrated_stable.aggregate_metrics},
         ]
     )
+    if wf_orchestrated_stable_meta.filtered_aggregate_metrics is not None:
+        metrics_table = pd.concat(
+            [
+                metrics_table,
+                pd.DataFrame(
+                    [
+                        {
+                            "Strategy": "Orchestrated Stable + MetaFilter (Walk-Forward)",
+                            **wf_orchestrated_stable_meta.filtered_aggregate_metrics,
+                        }
+                    ]
+                ),
+            ],
+            ignore_index=True,
+        )
 
     metrics_table.to_csv(OUTPUT_DIR / "metrics_summary.csv", index=False)
     regime_attribution.to_csv(OUTPUT_DIR / "regime_attribution.csv", index=False)
@@ -936,6 +1031,14 @@ def main() -> None:
     )
     meta_filter_comparison.to_csv(OUTPUT_DIR / "meta_filter_comparison.csv", index=False)
     trade_quality_distribution.to_csv(OUTPUT_DIR / "trade_quality_distribution.csv", index=False)
+    if not wf_meta_filter_comparison.empty:
+        wf_meta_filter_comparison.to_csv(OUTPUT_DIR / "wf_meta_filter_comparison.csv", index=False)
+    if not wf_meta_filter_folds.empty:
+        wf_meta_filter_folds.to_csv(OUTPUT_DIR / "wf_meta_filter_folds.csv", index=False)
+    if not wf_meta_filter_diagnostics.empty:
+        wf_meta_filter_diagnostics.to_csv(
+            OUTPUT_DIR / "wf_meta_filter_diagnostics.csv", index=False
+        )
     switch_diagnostics.to_csv(OUTPUT_DIR / "switch_diagnostics.csv", index=False)
     regime_duration_stats.to_csv(OUTPUT_DIR / "regime_duration_stats.csv", index=False)
     switches_per_1000.to_csv(OUTPUT_DIR / "switches_per_1000_bars.csv", index=False)
@@ -945,6 +1048,11 @@ def main() -> None:
     wf_rsi_filtered.fold_results.to_csv(OUTPUT_DIR / "walk_forward_rsi_filtered_folds.csv", index=False)
     wf_orchestrated_raw.fold_results.to_csv(OUTPUT_DIR / "walk_forward_orchestrated_raw_folds.csv", index=False)
     wf_orchestrated_stable.fold_results.to_csv(OUTPUT_DIR / "walk_forward_orchestrated_stable_folds.csv", index=False)
+    if not wf_orchestrated_stable_meta.fold_results.empty:
+        wf_orchestrated_stable_meta.fold_results.to_csv(
+            OUTPUT_DIR / "walk_forward_orchestrated_stable_meta_folds.csv",
+            index=False,
+        )
     ma_bootstrap_dist.to_csv(OUTPUT_DIR / "bootstrap_ma_distribution.csv", index=False)
     rsi_bootstrap_dist.to_csv(OUTPUT_DIR / "bootstrap_rsi_distribution.csv", index=False)
 
@@ -985,6 +1093,16 @@ def main() -> None:
         eval_unfiltered_bt.equity,
         eval_filtered_bt.equity,
     )
+    if (
+        wf_orchestrated_stable_meta.filtered_combined_equity is not None
+        and wf_orchestrated_stable_meta.combined_equity is not None
+    ):
+        _save_filtered_vs_unfiltered_equity(
+            pd.Series(wf_orchestrated_stable_meta.combined_equity.index),
+            wf_orchestrated_stable_meta.combined_equity,
+            wf_orchestrated_stable_meta.filtered_combined_equity,
+            filename="wf_filtered_vs_unfiltered_equity.png",
+        )
     _save_heatmap(ma_sweep)
     _save_sharpe_by_regime_chart(regime_attribution)
     _save_pnl_by_regime_chart(regime_attribution)

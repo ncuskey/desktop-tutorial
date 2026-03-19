@@ -232,6 +232,55 @@ class RuleBasedMetaFilter:
         proba = self.predict_proba(X)
         return (proba >= self.threshold).astype(int).rename("meta_take")
 
+    def transform(self, X: pd.DataFrame) -> pd.DataFrame:
+        """Apply learned calibration to new data without refitting."""
+        proba = self.predict_proba(X)
+        take = (proba >= self.threshold).astype(int)
+        return pd.DataFrame(
+            {
+                "meta_take_proba": proba,
+                "meta_take": take,
+            },
+            index=X.index,
+        )
+
+    def apply(
+        self,
+        primary_signal: pd.Series,
+        entry_mask: pd.Series,
+        X_events: pd.DataFrame,
+    ) -> tuple[pd.Series, pd.Series, pd.Series]:
+        """Filter entry events using learned meta decisions."""
+        transformed = self.transform(X_events)
+        take_series = pd.Series(1, index=primary_signal.index, dtype=int)
+        proba_series = pd.Series(np.nan, index=primary_signal.index, dtype=float)
+        take_series.loc[transformed.index] = transformed["meta_take"].astype(int)
+        proba_series.loc[transformed.index] = transformed["meta_take_proba"].astype(float)
+        filtered_signal = apply_meta_trade_filter(
+            primary_signal=primary_signal,
+            entry_mask=entry_mask,
+            meta_take_decision=take_series,
+        )
+        return filtered_signal, take_series, proba_series
+
+    def to_dict(self) -> dict:
+        """Serialize learned calibration for fold diagnostics."""
+        return {
+            "target_filter_rate": float(self.target_filter_rate),
+            "threshold": float(self.threshold),
+            "bias": float(self.bias),
+            "feature_columns": list(self.feature_columns),
+            "numeric_weights": dict(self.numeric_weights),
+            "numeric_medians": dict(self.numeric_medians),
+            "numeric_means": dict(self.numeric_means),
+            "numeric_stds": dict(self.numeric_stds),
+            "categorical_effects": {
+                k: {kk: float(vv) for kk, vv in v.items()}
+                for k, v in self.categorical_effects.items()
+            },
+            "fitted": bool(self.fitted_),
+        }
+
 
 def apply_meta_trade_filter(
     primary_signal: pd.Series,
