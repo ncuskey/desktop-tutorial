@@ -241,6 +241,7 @@ def main() -> None:
     print(f"- {Path(args.outputs) / 'multi_symbol_fold_summary.csv'}")
     print(f"- {Path(args.outputs) / 'multi_symbol_equity_comparison.png'}")
     print(f"- {Path(args.outputs) / 'multi_symbol_meta_diagnostics.csv'}")
+    print(f"- {Path(args.outputs) / 'meta_label_method_comparison.csv'}")
     print(f"- {Path(args.outputs) / 'data_ingestion_audit.csv'}")
     print(f"- {Path(args.outputs) / 'data_quality_flags.csv'}")
 

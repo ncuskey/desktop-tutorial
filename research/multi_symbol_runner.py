@@ -217,8 +217,16 @@ def run_multi_symbol_evaluation(
     }
     meta_cfg = defaults.get("meta_filter", {})
     meta_target_filter_rate = float(meta_cfg.get("target_filter_rate", 0.4))
-    meta_horizon = int(meta_cfg.get("horizon_bars", 24))
-    meta_threshold = float(meta_cfg.get("success_threshold", 0.0002))
+    meta_horizon = int(meta_cfg.get("forward_horizon", meta_cfg.get("horizon_bars", 24)))
+    meta_method = str(meta_cfg.get("method", "top_quantile"))
+    meta_quantile = float(meta_cfg.get("quantile", 0.3))
+    raw_cost_thr = meta_cfg.get("cost_threshold", meta_cfg.get("success_threshold", None))
+    meta_cost_threshold = float(raw_cost_thr) if raw_cost_thr is not None else None
+    method_comparison = meta_cfg.get(
+        "comparison_methods",
+        ["top_quantile", "directional_accuracy", "cost_adjusted_return"],
+    )
+    comparison_methods = [str(m) for m in method_comparison]
     meta_min_train_samples = int(meta_cfg.get("min_train_samples", 30))
 
     orchestrated_grid = {
@@ -232,6 +240,7 @@ def run_multi_symbol_evaluation(
     summary_rows: list[dict[str, Any]] = []
     fold_rows: list[dict[str, Any]] = []
     meta_diag_rows: list[dict[str, Any]] = []
+    method_comparison_rows: list[dict[str, Any]] = []
     audit_rows: list[dict[str, Any]] = []
     quality_rows: list[dict[str, Any]] = []
     artifacts: list[SymbolRunArtifacts] = []
@@ -286,8 +295,10 @@ def run_multi_symbol_evaluation(
                 meta_feature_builder=build_trade_meta_features,
                 meta_label_builder=create_trade_success_labels,
                 meta_label_kwargs={
-                    "horizon_bars": meta_horizon,
-                    "success_threshold": meta_threshold,
+                    "forward_horizon": meta_horizon,
+                    "method": meta_method,
+                    "quantile": meta_quantile,
+                    "cost_threshold": meta_cost_threshold,
                 },
                 meta_apply_fn=apply_meta_trade_filter,
                 meta_min_train_samples=meta_min_train_samples,
@@ -329,6 +340,13 @@ def run_multi_symbol_evaluation(
                     "average_meta_threshold": float(diag.get("AvgMetaThresholdByFold", 0.0)),
                     "threshold_stability": float(diag.get("StdMetaThresholdByFold", 0.0)),
                     "fold_count": float(diag.get("FoldCount", 0.0)),
+                    "expectancy_delta": float(diag.get("ExpectancyDelta", 0.0)),
+                    "avg_signal_strength_filtered": float(
+                        diag.get("AvgSignalStrengthFiltered", 0.0)
+                    ),
+                    "avg_signal_strength_unfiltered": float(
+                        diag.get("AvgSignalStrengthUnfiltered", 0.0)
+                    ),
                 }
             )
 
@@ -350,6 +368,61 @@ def run_multi_symbol_evaluation(
                         "unfiltered_maxdd": row.get("test_MaxDrawdown_unfiltered"),
                         "filtered_maxdd": row.get("test_MaxDrawdown_filtered"),
                         "filter_rate": row.get("meta_filter_rate", 0.0),
+                        "label_method": row.get("meta_label_method", meta_method),
+                        "filter_type": row.get("meta_filter_type", "global"),
+                    }
+                )
+
+            # Method comparison (aggregated across symbols later).
+            default_diag = wf.meta_filter_diagnostics or {}
+            method_comparison_rows.append(
+                {
+                    "symbol": symbol,
+                    "method": meta_method,
+                    "Sharpe": float(wf.filtered_aggregate_metrics["Sharpe"]),
+                    "CAGR": float(wf.filtered_aggregate_metrics["CAGR"]),
+                    "MaxDD": float(wf.filtered_aggregate_metrics["MaxDrawdown"]),
+                    "Expectancy": float(wf.filtered_aggregate_metrics["Expectancy"]),
+                    "FilterRate": float(default_diag.get("AvgFilterRateByFold", 0.0)),
+                }
+            )
+            for method in comparison_methods:
+                if method == meta_method:
+                    continue
+                wf_method = run_walk_forward(
+                    df=df,
+                    strategy_fn=_orchestrated_strategy,
+                    param_grid=orchestrated_grid,
+                    train_bars=train_bars,
+                    test_bars=test_bars,
+                    cost_model=symbol_cost,
+                    timeframe=timeframe,
+                    regime_column="stable_regime_label",
+                    meta_filter_class=RuleBasedMetaFilter,
+                    meta_filter_kwargs={"target_filter_rate": meta_target_filter_rate},
+                    meta_feature_builder=build_trade_meta_features,
+                    meta_label_builder=create_trade_success_labels,
+                    meta_label_kwargs={
+                        "forward_horizon": meta_horizon,
+                        "method": method,
+                        "quantile": meta_quantile,
+                        "cost_threshold": meta_cost_threshold,
+                    },
+                    meta_apply_fn=apply_meta_trade_filter,
+                    meta_min_train_samples=meta_min_train_samples,
+                )
+                if wf_method.filtered_aggregate_metrics is None:
+                    continue
+                md = wf_method.meta_filter_diagnostics or {}
+                method_comparison_rows.append(
+                    {
+                        "symbol": symbol,
+                        "method": method,
+                        "Sharpe": float(wf_method.filtered_aggregate_metrics["Sharpe"]),
+                        "CAGR": float(wf_method.filtered_aggregate_metrics["CAGR"]),
+                        "MaxDD": float(wf_method.filtered_aggregate_metrics["MaxDrawdown"]),
+                        "Expectancy": float(wf_method.filtered_aggregate_metrics["Expectancy"]),
+                        "FilterRate": float(md.get("AvgFilterRateByFold", 0.0)),
                     }
                 )
 
@@ -367,12 +440,22 @@ def run_multi_symbol_evaluation(
     summary_df = pd.DataFrame(summary_rows)
     folds_df = pd.DataFrame(fold_rows)
     meta_diag_df = pd.DataFrame(meta_diag_rows)
+    method_comp_raw = pd.DataFrame(method_comparison_rows)
     audit_df = pd.DataFrame(audit_rows)
     quality_df = pd.DataFrame(quality_rows)
+    method_comp_df = (
+        method_comp_raw.groupby("method", as_index=False)[
+            ["Sharpe", "CAGR", "MaxDD", "Expectancy", "FilterRate"]
+        ]
+        .mean()
+        if not method_comp_raw.empty
+        else pd.DataFrame(columns=["method", "Sharpe", "CAGR", "MaxDD", "Expectancy", "FilterRate"])
+    )
 
     summary_df.to_csv(output_path / "multi_symbol_summary.csv", index=False)
     folds_df.to_csv(output_path / "multi_symbol_fold_summary.csv", index=False)
     meta_diag_df.to_csv(output_path / "multi_symbol_meta_diagnostics.csv", index=False)
+    method_comp_df.to_csv(output_path / "meta_label_method_comparison.csv", index=False)
     audit_df.to_csv(output_path / "data_ingestion_audit.csv", index=False)
     quality_df.to_csv(output_path / "data_quality_flags.csv", index=False)
     _plot_multi_symbol_equity(artifacts, output_path / "multi_symbol_equity_comparison.png")
@@ -381,6 +464,7 @@ def run_multi_symbol_evaluation(
         "multi_symbol_summary": summary_df,
         "multi_symbol_fold_summary": folds_df,
         "multi_symbol_meta_diagnostics": meta_diag_df,
+        "meta_label_method_comparison": method_comp_df,
         "data_ingestion_audit": audit_df,
         "data_quality_flags": quality_df,
     }

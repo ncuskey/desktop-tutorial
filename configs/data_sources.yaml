@@ -6,8 +6,14 @@ defaults:
   test_bars: 200
   meta_filter:
     target_filter_rate: 0.4
-    horizon_bars: 24
-    success_threshold: 0.0002
+    forward_horizon: 24
+    method: top_quantile
+    quantile: 0.3
+    cost_threshold: null
+    comparison_methods:
+      - top_quantile
+      - directional_accuracy
+      - cost_adjusted_return
     min_train_samples: 30
   cost_model:
     spread_bps: 0.8

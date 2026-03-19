@@ -46,7 +46,7 @@ def run_walk_forward(
     meta_filter_class: type | None = None,
     meta_filter_kwargs: dict[str, Any] | None = None,
     meta_feature_builder: Callable[[pd.DataFrame, pd.Series], pd.DataFrame] | None = None,
-    meta_label_builder: Callable[..., pd.DataFrame] | None = None,
+    meta_label_builder: Callable[..., pd.Series] | None = None,
     meta_label_kwargs: dict[str, Any] | None = None,
     meta_apply_fn: Callable[[pd.Series, pd.Series, pd.Series], pd.Series] | None = None,
     meta_min_train_samples: int = 30,
@@ -59,6 +59,13 @@ def run_walk_forward(
 
     meta_filter_kwargs = meta_filter_kwargs or {}
     meta_label_kwargs = meta_label_kwargs or {}
+    meta_label_method = str(meta_label_kwargs.get("method", "top_quantile"))
+    forward_horizon = int(
+        meta_label_kwargs.get(
+            "forward_horizon",
+            meta_label_kwargs.get("horizon_bars", 24),
+        )
+    )
 
     folds: list[dict] = []
     stitched_returns: list[np.ndarray] = []
@@ -74,6 +81,8 @@ def run_walk_forward(
     sharpe_improved: list[bool] = []
     expectancy_improved: list[bool] = []
     drawdown_improved: list[bool] = []
+    avg_signal_strength_filtered: list[float] = []
+    avg_signal_strength_unfiltered: list[float] = []
 
     i = 0
     while i + train_bars + test_bars <= len(df):
@@ -115,16 +124,26 @@ def run_walk_forward(
                 if "entry_mask" in train_features.columns
                 else _entry_mask_from_signal(train_signal)
             )
+            close_train = pd.to_numeric(train_df["close"], errors="coerce")
+            train_forward_price = close_train.shift(-forward_horizon) / close_train - 1.0
+            train_forward_trade_returns = np.sign(train_signal) * train_forward_price
             train_labels = meta_label_builder(
                 train_df,
                 train_signal,
-                train_entry_mask,
+                entry_mask=train_entry_mask,
                 **meta_label_kwargs,
             )
-            X_train = train_features.loc[train_labels.index].drop(
+            train_event_idx = train_entry_mask[train_entry_mask].index
+            valid_train_idx = train_event_idx[
+                train_labels.reindex(train_event_idx).notna()
+                & train_forward_trade_returns.reindex(train_event_idx).notna()
+            ]
+
+            X_train = train_features.loc[valid_train_idx].drop(
                 columns=["entry_mask"], errors="ignore"
             )
-            y_train = train_labels["label_success"].astype(int)
+            y_train = train_labels.loc[valid_train_idx].astype(int)
+            r_train = train_forward_trade_returns.loc[valid_train_idx].astype(float)
 
             test_features = meta_feature_builder(test_df, test_signal)
             test_entry_mask = (
@@ -138,11 +157,20 @@ def run_walk_forward(
 
             meta_take = pd.Series(1, index=test_df.index, dtype=int)
             meta_proba = pd.Series(np.nan, index=test_df.index, dtype=float)
+            filter_type_used = pd.Series("global", index=test_df.index, dtype=str)
             can_fit = len(X_train) >= meta_min_train_samples and y_train.nunique() > 1
 
             if can_fit:
                 meta_model = meta_filter_class(**meta_filter_kwargs)
-                meta_model.fit(X_train, y_train)
+                fit_filter_type = (
+                    X_train["filter_type"].astype(str) if "filter_type" in X_train.columns else None
+                )
+                meta_model.fit(
+                    X_train,
+                    y_train,
+                    forward_returns=r_train,
+                    filter_type=fit_filter_type,
+                )
                 fold_threshold = float(getattr(meta_model, "threshold", np.nan))
                 if hasattr(meta_model, "to_dict"):
                     meta_state_json = json.dumps(meta_model.to_dict(), sort_keys=True)
@@ -153,11 +181,16 @@ def run_walk_forward(
                             entry_mask=test_entry_mask,
                             X_events=X_test_events,
                         )
+                        latest_type = getattr(meta_model, "latest_filter_type_used", None)
+                        if latest_type is not None:
+                            filter_type_used.loc[latest_type.index] = latest_type.astype(str)
                     else:
                         transformed = meta_model.transform(X_test_events)
                         meta_take.loc[transformed.index] = transformed["meta_take"].astype(int)
                         if "meta_take_proba" in transformed.columns:
                             meta_proba.loc[transformed.index] = transformed["meta_take_proba"].astype(float)
+                        if "filter_type_used" in transformed.columns:
+                            filter_type_used.loc[transformed.index] = transformed["filter_type_used"].astype(str)
                         if meta_apply_fn is None:
                             raise ValueError(
                                 "meta_apply_fn is required when meta model has no apply method."
@@ -174,6 +207,17 @@ def run_walk_forward(
 
             if len(X_test_events) > 0:
                 fold_filter_rate = float((meta_take.loc[X_test_events.index] == 0).mean())
+                if "signal_strength" in test_features.columns:
+                    strength = pd.to_numeric(
+                        test_features.loc[X_test_events.index, "signal_strength"],
+                        errors="coerce",
+                    )
+                    avg_signal_strength_unfiltered.append(float(strength.mean()))
+                    kept = strength.loc[meta_take.loc[X_test_events.index] == 1]
+                    avg_signal_strength_filtered.append(float(kept.mean()) if not kept.empty else 0.0)
+                else:
+                    avg_signal_strength_unfiltered.append(0.0)
+                    avg_signal_strength_filtered.append(0.0)
 
             filtered_bt = run_backtest(test_df, filtered_signal, cost_model=cost_model)
             filtered_metrics = compute_metrics(
@@ -193,6 +237,18 @@ def run_walk_forward(
             drawdown_improved.append(
                 filtered_metrics["MaxDrawdown"] > unfiltered_metrics["MaxDrawdown"]
             )
+            test_event_types = filter_type_used.loc[X_test_events.index].astype(str)
+            dominant_filter_type = (
+                test_event_types.mode().iloc[0] if not test_event_types.empty else "global"
+            )
+            filter_type_breakdown = (
+                test_event_types.value_counts(normalize=True).astype(float).to_dict()
+                if not test_event_types.empty
+                else {"global": 1.0}
+            )
+        else:
+            dominant_filter_type = "global"
+            filter_type_breakdown = {"global": 1.0}
 
         regime_return_breakdown: dict[str, float] = {}
         regime_time_pct: dict[str, float] = {}
@@ -215,6 +271,9 @@ def run_walk_forward(
             "meta_filter_rate": float(fold_filter_rate),
             "meta_threshold": None if np.isnan(fold_threshold) else float(fold_threshold),
             "meta_state": meta_state_json,
+            "meta_label_method": meta_label_method,
+            "meta_filter_type": dominant_filter_type,
+            "meta_filter_type_breakdown": json.dumps(filter_type_breakdown, sort_keys=True),
             **{f"test_{k}": v for k, v in unfiltered_metrics.items()},
         }
         if filtered_metrics is not None:
@@ -320,6 +379,16 @@ def run_walk_forward(
             if drawdown_improved
             else 0.0,
             "FoldCount": float(len(meta_filter_rates)),
+            "ExpectancyDelta": float(
+                filtered_aggregate_metrics["Expectancy"] - aggregate_metrics["Expectancy"]
+            ),
+            "AvgSignalStrengthFiltered": float(np.mean(avg_signal_strength_filtered))
+            if avg_signal_strength_filtered
+            else 0.0,
+            "AvgSignalStrengthUnfiltered": float(np.mean(avg_signal_strength_unfiltered))
+            if avg_signal_strength_unfiltered
+            else 0.0,
+            "LabelMethod": meta_label_method,
         }
 
     return WalkForwardResult(

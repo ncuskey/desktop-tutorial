@@ -413,11 +413,18 @@ def main() -> None:
     meta_labels = create_trade_success_labels(
         df,
         orchestrated_stable_signal,
-        entry_mask,
-        horizon_bars=24,
-        success_threshold=0.0002,
+        entry_mask=entry_mask,
+        forward_horizon=24,
+        method="top_quantile",
+        quantile=0.3,
     )
-    event_features = meta_features.loc[meta_labels.index].drop(columns=["entry_mask"])
+    train_close = pd.to_numeric(df["close"], errors="coerce")
+    train_forward_ret = np.sign(orchestrated_stable_signal) * (
+        train_close.shift(-24) / train_close - 1.0
+    )
+    event_idx = entry_mask[entry_mask].index
+    valid_idx = event_idx[meta_labels.reindex(event_idx).notna() & train_forward_ret.reindex(event_idx).notna()]
+    event_features = meta_features.loc[valid_idx].drop(columns=["entry_mask"], errors="ignore")
     meta_model = RuleBasedMetaFilter(target_filter_rate=0.4)
     train_event_count = max(int(len(event_features) * 0.6), 1) if len(event_features) > 1 else 0
     meta_decision_all = pd.Series(1, index=df.index, dtype=int)
@@ -425,12 +432,15 @@ def main() -> None:
 
     if train_event_count > 0 and len(event_features) > train_event_count:
         X_train = event_features.iloc[:train_event_count]
-        y_train = meta_labels["label_success"].iloc[:train_event_count]
-        meta_model.fit(X_train, y_train)
+        y_train = meta_labels.loc[X_train.index].astype(int)
+        r_train = train_forward_ret.loc[X_train.index].astype(float)
+        fit_type = X_train["filter_type"].astype(str) if "filter_type" in X_train.columns else None
+        meta_model.fit(X_train, y_train, forward_returns=r_train, filter_type=fit_type)
         X_test = event_features.iloc[train_event_count:]
         test_idx = X_test.index
-        test_prob = meta_model.predict_proba(X_test)
-        test_take = meta_model.predict(X_test)
+        test_type = X_test["filter_type"].astype(str) if "filter_type" in X_test.columns else None
+        test_prob = meta_model.predict_proba(X_test, filter_type=test_type)
+        test_take = meta_model.predict(X_test, filter_type=test_type)
         meta_decision_all.loc[test_idx] = test_take.astype(int)
         meta_probability_all.loc[test_idx] = test_prob.astype(float)
     else:

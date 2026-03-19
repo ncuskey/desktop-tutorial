@@ -96,6 +96,14 @@ Or do it in one step and immediately run strict WF evaluation:
 python3 run_real_data_evaluation.py --pull-duka-history --duka-start 01-01-2024 --duka-end 30-06-2024
 ```
 
+Meta-label defaults are now configured in `configs/data_sources.yaml`:
+- `method: top_quantile`
+- `quantile: 0.3`
+- strict per-fold train-only calibration
+
+Method-level comparison output is written to:
+- `outputs/meta_label_method_comparison.csv`
+
 ## Notes
 
 - Current default run uses generated sample OHLCV data (`data/sample_ohlcv.csv`).
