@@ -21,6 +21,12 @@ from execution import (
     run_backtest,
 )
 from metrics import compute_metrics, compute_metrics_by_regime
+from metalabel import (
+    RuleBasedMetaFilter,
+    apply_meta_trade_filter,
+    build_trade_meta_features,
+    create_trade_success_labels,
+)
 from orchestrators import RegimeSpecialistOrchestrator
 from regime import attach_regime_labels, attach_stable_regime_state
 from research import (
@@ -208,6 +214,23 @@ def _save_equity_curves_comparison(
     plt.close(fig)
 
 
+def _save_filtered_vs_unfiltered_equity(
+    timestamps: pd.Series,
+    unfiltered_equity: pd.Series,
+    filtered_equity: pd.Series,
+) -> None:
+    fig, ax = plt.subplots(figsize=(12, 5))
+    ax.plot(timestamps, unfiltered_equity.values, label="Orchestrator (Unfiltered)", alpha=0.85)
+    ax.plot(timestamps, filtered_equity.values, label="Orchestrator + Meta Filter", alpha=0.85)
+    ax.set_title("Filtered vs Unfiltered Orchestrator Equity")
+    ax.set_xlabel("Time")
+    ax.set_ylabel("Equity")
+    ax.legend(loc="best")
+    fig.tight_layout()
+    fig.savefig(OUTPUT_DIR / "filtered_vs_unfiltered_equity.png", dpi=150)
+    plt.close(fig)
+
+
 def _save_pnl_by_regime_chart(regime_attribution: pd.DataFrame) -> None:
     label_rows = regime_attribution[regime_attribution["RegimeColumn"] == "regime_label"].copy()
     if label_rows.empty:
@@ -383,6 +406,44 @@ def main() -> None:
         },
     )
 
+    # --- Meta-labeling layer on top of stable orchestrator ---
+    meta_features = build_trade_meta_features(df, orchestrated_stable_signal)
+    entry_mask = meta_features["entry_mask"].astype(bool)
+    meta_labels = create_trade_success_labels(
+        df,
+        orchestrated_stable_signal,
+        entry_mask,
+        horizon_bars=24,
+        success_threshold=0.0002,
+    )
+    event_features = meta_features.loc[meta_labels.index].drop(columns=["entry_mask"])
+    meta_model = RuleBasedMetaFilter(target_filter_rate=0.4)
+    train_event_count = max(int(len(event_features) * 0.6), 1) if len(event_features) > 1 else 0
+    meta_decision_all = pd.Series(1, index=df.index, dtype=int)
+    meta_probability_all = pd.Series(np.nan, index=df.index, dtype=float)
+
+    if train_event_count > 0 and len(event_features) > train_event_count:
+        X_train = event_features.iloc[:train_event_count]
+        y_train = meta_labels["label_success"].iloc[:train_event_count]
+        meta_model.fit(X_train, y_train)
+        X_test = event_features.iloc[train_event_count:]
+        test_idx = X_test.index
+        test_prob = meta_model.predict_proba(X_test)
+        test_take = meta_model.predict(X_test)
+        meta_decision_all.loc[test_idx] = test_take.astype(int)
+        meta_probability_all.loc[test_idx] = test_prob.astype(float)
+    else:
+        # If not enough events to fit robustly, default to pass-through.
+        test_idx = event_features.index
+        meta_decision_all.loc[test_idx] = 1
+        meta_probability_all.loc[test_idx] = 1.0
+
+    orchestrated_meta_signal = apply_meta_trade_filter(
+        orchestrated_stable_signal,
+        entry_mask=entry_mask,
+        meta_take_decision=meta_decision_all,
+    )
+
     ma_bt = run_backtest(df, ma_signal, cost_model=cost_model)
     rsi_bt = run_backtest(df, rsi_signal, cost_model=cost_model)
     ma_filtered_bt = run_backtest(df, ma_filtered_signal, cost_model=cost_model)
@@ -390,6 +451,7 @@ def main() -> None:
     ensemble_bt = run_backtest(df, filtered_ensemble_signal, cost_model=cost_model)
     orchestrated_raw_bt = run_backtest(df, orchestrated_raw_signal, cost_model=cost_model)
     orchestrated_stable_bt = run_backtest(df, orchestrated_stable_signal, cost_model=cost_model)
+    orchestrated_meta_bt = run_backtest(df, orchestrated_meta_signal, cost_model=cost_model)
 
     strategy_results = {
         "MA Baseline": ma_bt,
@@ -399,6 +461,7 @@ def main() -> None:
         "Filtered Ensemble (Equal Weight)": ensemble_bt,
         "Regime Orchestrator Raw": orchestrated_raw_bt,
         "Regime Orchestrator Stable": orchestrated_stable_bt,
+        "Regime Orchestrator Stable + MetaFilter": orchestrated_meta_bt,
     }
     strategy_metrics = {
         name: compute_metrics(
@@ -581,6 +644,18 @@ def main() -> None:
         timeframe,
         strategy_metrics["Regime Orchestrator Stable"],
     )
+    tracker.log_run(
+        "regime_orchestrator_stable_meta_filter",
+        {
+            "meta_model": "rule_based",
+            "target_filter_rate": 0.4,
+            "label_horizon_bars": 24,
+            "label_threshold": 0.0002,
+        },
+        symbol,
+        timeframe,
+        strategy_metrics["Regime Orchestrator Stable + MetaFilter"],
+    )
     tracker.log_run("ma_filtered_walk_forward", {}, symbol, timeframe, wf_ma_filtered.aggregate_metrics)
     tracker.log_run(
         "rsi_filtered_walk_forward", {}, symbol, timeframe, wf_rsi_filtered.aggregate_metrics
@@ -631,6 +706,13 @@ def main() -> None:
                 orchestrated_stable_bt.position,
                 timeframe,
             ),
+            _collect_regime_metrics(
+                "Regime Orchestrator Stable + MetaFilter",
+                df,
+                orchestrated_meta_bt.returns,
+                orchestrated_meta_bt.position,
+                timeframe,
+            ),
         ],
         ignore_index=True,
     )
@@ -677,6 +759,11 @@ def main() -> None:
         _strategy_metrics_row(
             "Regime Orchestrator Stable",
             strategy_metrics["Regime Orchestrator Stable"],
+            "InSample",
+        ),
+        _strategy_metrics_row(
+            "Regime Orchestrator Stable + MetaFilter",
+            strategy_metrics["Regime Orchestrator Stable + MetaFilter"],
             "InSample",
         ),
         _strategy_metrics_row("MA Baseline", wf_ma.aggregate_metrics, "WalkForward"),
@@ -738,6 +825,85 @@ def main() -> None:
         how="left",
     )
 
+    # Meta-filter comparison on out-of-sample event window.
+    if train_event_count > 0 and len(event_features) > train_event_count:
+        eval_start_idx = event_features.index[train_event_count]
+    else:
+        eval_start_idx = df.index[0]
+    eval_start_loc = df.index.get_loc(eval_start_idx)
+    eval_df = df.iloc[eval_start_loc:].reset_index(drop=True)
+    stable_eval_signal = orchestrated_stable_signal.iloc[eval_start_loc:].reset_index(drop=True)
+    meta_eval_signal = orchestrated_meta_signal.iloc[eval_start_loc:].reset_index(drop=True)
+
+    eval_unfiltered_bt = run_backtest(eval_df, stable_eval_signal, cost_model=cost_model)
+    eval_filtered_bt = run_backtest(eval_df, meta_eval_signal, cost_model=cost_model)
+
+    eval_unfiltered_metrics = compute_metrics(
+        eval_unfiltered_bt.returns,
+        eval_unfiltered_bt.equity,
+        eval_unfiltered_bt.trades,
+        timeframe=timeframe,
+        position=eval_unfiltered_bt.position,
+    )
+    eval_filtered_metrics = compute_metrics(
+        eval_filtered_bt.returns,
+        eval_filtered_bt.equity,
+        eval_filtered_bt.trades,
+        timeframe=timeframe,
+        position=eval_filtered_bt.position,
+    )
+
+    eval_event_idx = event_features.index[train_event_count:] if train_event_count > 0 else event_features.index
+    if len(eval_event_idx) > 0:
+        filtered_pct = float((meta_decision_all.loc[eval_event_idx] == 0).mean())
+    else:
+        filtered_pct = 0.0
+
+    meta_filter_comparison = pd.DataFrame(
+        [
+            {
+                "Strategy": "Orchestrator Stable (Unfiltered)",
+                **eval_unfiltered_metrics,
+                "TradesFilteredPct": 0.0,
+                "EvalScope": "PostMetaTrainWindow",
+            },
+            {
+                "Strategy": "Orchestrator Stable + MetaFilter",
+                **eval_filtered_metrics,
+                "TradesFilteredPct": filtered_pct,
+                "EvalScope": "PostMetaTrainWindow",
+            },
+        ]
+    )
+
+    quality_events = pd.DataFrame(index=meta_labels.index)
+    quality_events["forward_return"] = meta_labels["forward_return"]
+    quality_events["label_success"] = meta_labels["label_success"]
+    quality_events["meta_take"] = meta_decision_all.reindex(meta_labels.index).fillna(1).astype(int)
+    quality_events["meta_take_proba"] = meta_probability_all.reindex(meta_labels.index).fillna(np.nan)
+    quality_events["stable_trend_regime"] = df.loc[quality_events.index, "stable_trend_regime"].values
+    quality_events["stable_vol_regime"] = df.loc[quality_events.index, "stable_vol_regime"].values
+    if len(eval_event_idx) > 0:
+        quality_events = quality_events.loc[eval_event_idx]
+
+    trade_quality_distribution = (
+        quality_events.groupby("meta_take")
+        .agg(
+            Count=("forward_return", "size"),
+            MeanForwardReturn=("forward_return", "mean"),
+            MedianForwardReturn=("forward_return", "median"),
+            WinLabelRate=("label_success", "mean"),
+            P10ForwardReturn=("forward_return", lambda s: s.quantile(0.10)),
+            P90ForwardReturn=("forward_return", lambda s: s.quantile(0.90)),
+        )
+        .reset_index()
+        .rename(columns={"meta_take": "MetaDecisionTake"})
+    )
+    if not trade_quality_distribution.empty:
+        trade_quality_distribution["PctOfTrades"] = (
+            trade_quality_distribution["Count"] / trade_quality_distribution["Count"].sum()
+        )
+
     metrics_table = pd.DataFrame(
         [
             {"Strategy": "MA Crossover (In-Sample)", **strategy_metrics["MA Baseline"]},
@@ -746,6 +912,10 @@ def main() -> None:
             {"Strategy": "RSI Reversal Filtered (In-Sample)", **strategy_metrics["RSI Specialist (RANGING)"]},
             {"Strategy": "Orchestrated Raw (In-Sample)", **strategy_metrics["Regime Orchestrator Raw"]},
             {"Strategy": "Orchestrated Stable (In-Sample)", **strategy_metrics["Regime Orchestrator Stable"]},
+            {
+                "Strategy": "Orchestrated Stable + MetaFilter (In-Sample)",
+                **strategy_metrics["Regime Orchestrator Stable + MetaFilter"],
+            },
             {"Strategy": "MA Crossover (Walk-Forward)", **wf_ma.aggregate_metrics},
             {"Strategy": "RSI Reversal (Walk-Forward)", **wf_rsi.aggregate_metrics},
             {"Strategy": "MA Filtered (Walk-Forward)", **wf_ma_filtered.aggregate_metrics},
@@ -764,6 +934,8 @@ def main() -> None:
     stable_vs_raw_orchestrator.to_csv(
         OUTPUT_DIR / "stable_vs_raw_orchestrator_comparison.csv", index=False
     )
+    meta_filter_comparison.to_csv(OUTPUT_DIR / "meta_filter_comparison.csv", index=False)
+    trade_quality_distribution.to_csv(OUTPUT_DIR / "trade_quality_distribution.csv", index=False)
     switch_diagnostics.to_csv(OUTPUT_DIR / "switch_diagnostics.csv", index=False)
     regime_duration_stats.to_csv(OUTPUT_DIR / "regime_duration_stats.csv", index=False)
     switches_per_1000.to_csv(OUTPUT_DIR / "switches_per_1000_bars.csv", index=False)
@@ -808,6 +980,11 @@ def main() -> None:
     _save_equity_curves_comparison(
         df["timestamp"], orchestrated_raw_bt.equity, orchestrated_stable_bt.equity
     )
+    _save_filtered_vs_unfiltered_equity(
+        eval_df["timestamp"],
+        eval_unfiltered_bt.equity,
+        eval_filtered_bt.equity,
+    )
     _save_heatmap(ma_sweep)
     _save_sharpe_by_regime_chart(regime_attribution)
     _save_pnl_by_regime_chart(regime_attribution)
@@ -828,6 +1005,8 @@ def main() -> None:
     print(specialist_vs_orchestrated.round(4).to_string(index=False))
     print("\nStable vs raw orchestrator comparison:")
     print(stable_vs_raw_orchestrator.round(4).to_string(index=False))
+    print("\nMeta filter comparison:")
+    print(meta_filter_comparison.round(4).to_string(index=False))
     print(f"Outputs written to: {OUTPUT_DIR.resolve()}")
 
 
