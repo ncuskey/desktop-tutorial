@@ -3,6 +3,8 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from .filters import apply_filter
+
 
 def ma_crossover_signals(df: pd.DataFrame, params: dict) -> pd.Series:
     fast = int(params.get("fast", 20))
@@ -15,7 +17,12 @@ def ma_crossover_signals(df: pd.DataFrame, params: dict) -> pd.Series:
     signal = np.where(fast_ma > slow_ma, 1, -1)
     signal = pd.Series(signal, index=df.index, dtype=float)
     signal[(fast_ma.isna()) | (slow_ma.isna())] = 0
-    return signal.astype(int)
+    out = signal.astype(int)
+
+    filter_condition = params.get("filter_condition")
+    if filter_condition is not None:
+        out = apply_filter(out, condition=filter_condition)
+    return out
 
 
 def donchian_breakout_signals(df: pd.DataFrame, params: dict) -> pd.Series:

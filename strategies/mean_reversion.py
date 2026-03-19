@@ -3,6 +3,8 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from .filters import apply_filter
+
 
 def rsi_reversal_signals(df: pd.DataFrame, params: dict) -> pd.Series:
     rsi_col = params.get("rsi_col", "rsi_14")
@@ -19,7 +21,12 @@ def rsi_reversal_signals(df: pd.DataFrame, params: dict) -> pd.Series:
     flatten = (signal == 0) & ((rsi >= exit_level - 2) & (rsi <= exit_level + 2))
     signal = signal.replace(0, np.nan).ffill().fillna(0)
     signal[flatten] = 0
-    return signal.astype(int)
+    out = signal.astype(int)
+
+    filter_condition = params.get("filter_condition")
+    if filter_condition is not None:
+        out = apply_filter(out, condition=filter_condition)
+    return out
 
 
 def bollinger_fade_signals(df: pd.DataFrame, params: dict) -> pd.Series:

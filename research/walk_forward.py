@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from typing import Callable
 
@@ -40,6 +41,7 @@ def run_walk_forward(
     cost_model: CostModel,
     timeframe: str = "H1",
     objective_metric: str = "Sharpe",
+    regime_column: str | None = None,
 ) -> WalkForwardResult:
     folds: list[dict] = []
     stitched_returns: list[np.ndarray] = []
@@ -68,6 +70,15 @@ def run_walk_forward(
             test_bt.returns, test_bt.equity, test_bt.trades, timeframe=timeframe
         )
 
+        regime_return_breakdown: dict[str, float] = {}
+        regime_time_pct: dict[str, float] = {}
+        if regime_column and regime_column in test_df.columns:
+            regime_values = test_df[regime_column].fillna("UNKNOWN").astype(str)
+            regime_return_breakdown = (
+                test_bt.returns.groupby(regime_values).sum().astype(float).to_dict()
+            )
+            regime_time_pct = regime_values.value_counts(normalize=True).astype(float).to_dict()
+
         folds.append(
             {
                 "fold_start": train_df["timestamp"].iloc[0],
@@ -75,6 +86,10 @@ def run_walk_forward(
                 "fold_test_end": test_df["timestamp"].iloc[-1],
                 "best_params": best_params,
                 "train_objective": float(best[objective_metric]),
+                "test_regime_return_breakdown": json.dumps(
+                    regime_return_breakdown, sort_keys=True
+                ),
+                "test_regime_time_pct": json.dumps(regime_time_pct, sort_keys=True),
                 **{f"test_{k}": v for k, v in test_metrics.items()},
             }
         )

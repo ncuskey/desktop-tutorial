@@ -62,3 +62,64 @@ def compute_metrics(
         "Expectancy": float(expectancy),
         "TradeCount": trade_count,
     }
+
+
+def compute_metrics_by_regime(
+    df: pd.DataFrame,
+    regime_column: str,
+    timeframe: str = "H1",
+    returns_column: str = "returns",
+    position_column: str = "position",
+) -> pd.DataFrame:
+    """Compute per-regime metrics for conditional edge analysis."""
+    required = {regime_column, returns_column}
+    missing = required - set(df.columns)
+    if missing:
+        raise ValueError(f"Missing required columns for regime metrics: {sorted(missing)}")
+
+    ppy = TIMEFRAME_TO_PERIODS.get(timeframe.upper(), 24 * 252)
+    rows: list[dict] = []
+
+    for regime, g in df.groupby(regime_column, dropna=False, sort=False):
+        returns = g[returns_column].dropna()
+        if returns.empty:
+            rows.append(
+                {
+                    "Regime": regime,
+                    "Sharpe": 0.0,
+                    "CAGR": 0.0,
+                    "MaxDrawdown": 0.0,
+                    "TradeCount": 0.0,
+                    "Bars": 0.0,
+                    "TimePct": 0.0,
+                }
+            )
+            continue
+
+        equity = (1.0 + returns).cumprod() * 100_000.0
+        years = max(len(returns) / ppy, 1e-9)
+        cagr = (equity.iloc[-1] / equity.iloc[0]) ** (1 / years) - 1 if equity.iloc[0] != 0 else 0
+
+        std_r = returns.std(ddof=0)
+        sharpe = float(np.sqrt(ppy) * (returns.mean() / std_r)) if std_r > 0 else 0.0
+        max_dd = float(((equity / equity.cummax()) - 1.0).min())
+
+        trade_count = 0.0
+        if position_column in g.columns:
+            pos = g[position_column].fillna(0)
+            entries = ((pos != 0) & (pos.shift(1).fillna(0) == 0)).sum()
+            trade_count = float(entries)
+
+        rows.append(
+            {
+                "Regime": regime,
+                "Sharpe": sharpe,
+                "CAGR": float(cagr),
+                "MaxDrawdown": max_dd,
+                "TradeCount": trade_count,
+                "Bars": float(len(returns)),
+                "TimePct": float(len(returns) / len(df)) if len(df) > 0 else 0.0,
+            }
+        )
+
+    return pd.DataFrame(rows).sort_values("Regime").reset_index(drop=True)
