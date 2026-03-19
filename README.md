@@ -76,6 +76,26 @@ python3 run_real_data_evaluation.py --pull-apilayer-live
 Note: the apilayer `/live` endpoint returns point-in-time quotes (not full historical OHLC bars).  
 For robust backtests you still need accumulated snapshots or provider historical endpoints.
 
+### Pull Dukascopy historical data (duka-dl)
+
+Install downloader dependency:
+
+```bash
+python3 -m pip install duka-dl
+```
+
+Download history and build canonical H1 CSV files for configured symbols:
+
+```bash
+python3 fetch_dukascopy_history.py --start 01-01-2024 --end 30-06-2024
+```
+
+Or do it in one step and immediately run strict WF evaluation:
+
+```bash
+python3 run_real_data_evaluation.py --pull-duka-history --duka-start 01-01-2024 --duka-end 30-06-2024
+```
+
 ## Notes
 
 - Current default run uses generated sample OHLCV data (`data/sample_ohlcv.csv`).

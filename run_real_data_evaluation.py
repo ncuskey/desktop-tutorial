@@ -12,6 +12,7 @@ from data.apilayer_loader import (
     build_canonical_snapshot,
     fetch_apilayer_live_quotes,
 )
+from data.dukascopy_loader import pull_dukascopy_history_to_canonical
 from research import run_multi_symbol_evaluation
 
 
@@ -65,6 +66,39 @@ def _required_currencies_from_symbols(symbols: list[str], source: str) -> list[s
         if quote != source:
             cur.add(quote)
     return sorted(cur)
+
+
+def _pull_dukascopy_history(
+    symbols_path: str | Path,
+    start_date: str,
+    end_date: str,
+    target_timeframe: str = "H1",
+    raw_dir: str = "data/dukascopy_raw",
+    out_dir: str = "data/real",
+    mode: str = "BID",
+    threads: int = 20,
+    semaphore: int = 50,
+) -> None:
+    symbols = _configured_symbols(symbols_path)
+    if not symbols:
+        raise ValueError("No valid symbols in symbols config.")
+    rows = pull_dukascopy_history_to_canonical(
+        symbols=symbols,
+        start_date=start_date,
+        end_date=end_date,
+        target_timeframe=target_timeframe,
+        raw_output_folder=raw_dir,
+        canonical_output_folder=out_dir,
+        mode=mode,
+        threads=threads,
+        semaphore=semaphore,
+    )
+    print("Pulled Dukascopy history and wrote canonical files:")
+    for r in rows:
+        print(
+            f"- {r.symbol}: raw_rows={r.raw_rows}, canonical_rows={r.canonical_rows}, "
+            f"file={r.canonical_file}"
+        )
 
 
 def _pull_apilayer_live_snapshot(
@@ -132,10 +166,56 @@ def main() -> None:
         default=None,
         help="Optional apilayer key (defaults to configured env var).",
     )
+    parser.add_argument(
+        "--pull-duka-history",
+        action="store_true",
+        help="Fetch Dukascopy history (via duka-dl) and write canonical data/real files.",
+    )
+    parser.add_argument(
+        "--duka-start",
+        default=None,
+        help="Dukascopy start date DD-MM-YYYY (required with --pull-duka-history).",
+    )
+    parser.add_argument(
+        "--duka-end",
+        default=None,
+        help="Dukascopy end date DD-MM-YYYY (required with --pull-duka-history).",
+    )
+    parser.add_argument(
+        "--duka-mode",
+        default="BID",
+        help="Dukascopy price mode: BID or ASK (default BID).",
+    )
+    parser.add_argument(
+        "--duka-threads",
+        type=int,
+        default=20,
+        help="duka-dl thread count (default 20).",
+    )
+    parser.add_argument(
+        "--duka-semaphore",
+        type=int,
+        default=50,
+        help="duka-dl async semaphore (default 50).",
+    )
     args = parser.parse_args()
 
     if args.create_demo_if_missing:
         _ensure_demo_real_csvs(args.symbols)
+    if args.pull_duka_history:
+        if not args.duka_start or not args.duka_end:
+            raise ValueError("--pull-duka-history requires --duka-start and --duka-end.")
+        _pull_dukascopy_history(
+            symbols_path=args.symbols,
+            start_date=args.duka_start,
+            end_date=args.duka_end,
+            target_timeframe="H1",
+            raw_dir="data/dukascopy_raw",
+            out_dir="data/real",
+            mode=args.duka_mode,
+            threads=args.duka_threads,
+            semaphore=args.duka_semaphore,
+        )
     if args.pull_apilayer_live:
         _pull_apilayer_live_snapshot(
             data_sources_path=args.data_sources,

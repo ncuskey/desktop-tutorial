@@ -48,3 +48,10 @@ api_sources:
     endpoint: http://apilayer.net/api/live
     source: USD
     access_key_env: APILAYER_ACCESS_KEY
+
+historical_sources:
+  dukascopy_duka_dl:
+    target_timeframe: H1
+    mode: BID
+    threads: 20
+    semaphore: 50

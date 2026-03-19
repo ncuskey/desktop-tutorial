@@ -174,22 +174,36 @@ def normalize_fx_dataframe(
     out = out.sort_values("timestamp")
     out = out.drop_duplicates(subset=["timestamp"], keep="last").reset_index(drop=True)
 
-    if timeframe and timeframe.lower() not in {"1h", "h1"}:
-        tf_map = {"h1": "1h", "h4": "4h", "d1": "1d", "1h": "1h", "4h": "4h", "1d": "1d"}
+    if timeframe:
+        tf_map = {
+            "m1": "1min",
+            "1m": "1min",
+            "5m": "5min",
+            "15m": "15min",
+            "30m": "30min",
+            "h1": "1h",
+            "h4": "4h",
+            "d1": "1d",
+            "1h": "1h",
+            "4h": "4h",
+            "1d": "1d",
+        }
         tf = tf_map.get(timeframe.lower(), timeframe.lower())
-        base = resample_ohlcv(
-            out[["timestamp", "symbol", "open", "high", "low", "close", "volume"]],
-            tf,
-        )
-        spread = (
-            out.set_index("timestamp")["spread_bps"]
-            .resample(tf)
-            .mean()
-            .reset_index()
-            .rename(columns={"spread_bps": "spread_bps"})
-        )
-        out = base.merge(spread, on="timestamp", how="left")
-        out["symbol"] = symbol
+        source_tf = infer_timeframe_from_series(out["timestamp"])
+        source_tf_norm = tf_map.get(source_tf.lower(), source_tf.lower()) if isinstance(source_tf, str) else source_tf
+        if source_tf_norm != tf:
+            # Aggregate to requested research timeframe when source bar size differs.
+            spread_agg = (
+                out.set_index("timestamp")["spread_bps"]
+                .resample(tf)
+                .mean()
+                .reset_index()
+                .rename(columns={"spread_bps": "spread_bps"})
+            )
+            source_for_ohlc = out[["timestamp", "symbol", "open", "high", "low", "close", "volume"]]
+            base = resample_ohlcv(source_for_ohlc, tf)
+            out = base.merge(spread_agg, on="timestamp", how="left")
+            out["symbol"] = symbol
 
     cols = ["timestamp", "symbol", "open", "high", "low", "close", "volume", "spread_bps"]
     return out[cols].sort_values("timestamp").reset_index(drop=True)
@@ -201,11 +215,24 @@ def estimate_missing_bars(df: pd.DataFrame, timeframe: str | None = None) -> int
     ts = pd.to_datetime(df["timestamp"], utc=True).sort_values()
     if timeframe is None or timeframe == "unknown":
         timeframe = infer_timeframe_from_series(ts)
-    tf_map = {"1h": "1h", "4h": "4h", "1d": "1d", "H1": "1h", "H4": "4h", "D1": "1d"}
+    tf_map = {
+        "1m": "1min",
+        "5m": "5min",
+        "15m": "15min",
+        "30m": "30min",
+        "1h": "1h",
+        "4h": "4h",
+        "1d": "1d",
+        "H1": "1h",
+        "H4": "4h",
+        "D1": "1d",
+    }
     freq = tf_map.get(timeframe, timeframe)
     if freq == "unknown":
         return 0
     full = pd.date_range(ts.iloc[0], ts.iloc[-1], freq=freq, tz="UTC")
+    # FX cash trading is typically closed on weekends; exclude weekend bars from expectation.
+    full = full[full.dayofweek < 5]
     missing = len(full.difference(pd.DatetimeIndex(ts)))
     return int(max(missing, 0))
 
@@ -224,7 +251,15 @@ def build_data_quality_flags(df: pd.DataFrame, timeframe: str | None = None) -> 
         delta = ts.diff().dropna().dt.total_seconds()
         med = float(delta.median()) if len(delta) > 0 else 0.0
         if med > 0:
-            abnormal_gaps = int((delta > (3.0 * med)).sum())
+            prev_ts = ts.shift(1).loc[delta.index]
+            curr_ts = ts.loc[delta.index]
+            weekend_like = (
+                (prev_ts.dt.weekday >= 4)
+                & ((curr_ts.dt.weekday <= 1) | (curr_ts.dt.weekday == 6))
+                & (delta >= 40 * 3600)
+                & (delta <= 80 * 3600)
+            )
+            abnormal_gaps = int(((delta > (3.0 * med)) & (~weekend_like)).sum())
 
     return {
         "missing_ohlc_rows": missing_ohlc,

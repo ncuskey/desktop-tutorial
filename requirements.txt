@@ -2,3 +2,5 @@ pandas
 numpy
 matplotlib
 pyyaml
+duka-dl
+h2

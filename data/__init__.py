@@ -20,6 +20,11 @@ from .apilayer_loader import (
     build_canonical_snapshot,
     fetch_apilayer_live_quotes,
 )
+from .dukascopy_loader import (
+    DukascopyFetchResult,
+    pull_dukascopy_history_to_canonical,
+    run_duka_dl_download,
+)
 
 __all__ = [
     "CostModel",
@@ -38,4 +43,7 @@ __all__ = [
     "append_snapshot_rows_to_symbol_csv",
     "build_canonical_snapshot",
     "fetch_apilayer_live_quotes",
+    "DukascopyFetchResult",
+    "pull_dukascopy_history_to_canonical",
+    "run_duka_dl_download",
 ]
