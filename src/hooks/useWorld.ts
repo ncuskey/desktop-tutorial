@@ -15,7 +15,11 @@ import {
 // Define combined status type
 type Status = 'loading' | 'ready' | 'updatingHooks' | 'error';
 
-export interface AdventureHook { /* … */ }
+export interface AdventureHook { 
+  id: string;
+  description: string;
+  completed?: boolean;
+}
 export interface WorldState { /* … */ }
 export interface WorldLore { /* … */ }
 export interface QuestOutcome { questID: string; success: boolean; }
