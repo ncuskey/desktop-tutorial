@@ -32,3 +32,8 @@ evaluator:
   walk_forward:
     path: research.walk_forward:run_walk_forward
     adapter: class
+
+portfolio_allocator:
+  v2_portfolio_allocator:
+    path: portfolio.allocator:V2PortfolioAllocator
+    adapter: class

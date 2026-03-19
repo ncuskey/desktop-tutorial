@@ -225,6 +225,12 @@ def register_default_components(registry: ComponentRegistry) -> ComponentRegistr
         "research.walk_forward:run_walk_forward",
         adapter="class",
     )
+    registry.register_path(
+        "portfolio_allocator",
+        "v2_portfolio_allocator",
+        "portfolio.allocator:V2PortfolioAllocator",
+        adapter="class",
+    )
     return registry
 
 
