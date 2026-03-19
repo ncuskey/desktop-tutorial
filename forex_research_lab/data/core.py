@@ -212,7 +212,7 @@ def generate_mock_ohlcv(
                 "symbol": symbol,
                 "open": open_,
                 "high": high,
-                "low": low.clip(lower=0.0001),
+                "low": np.clip(low, 0.0001, None),
                 "close": close,
                 "volume": volume,
                 "spread_bps": DEFAULT_SPREAD_BPS.get(symbol, 1.0),

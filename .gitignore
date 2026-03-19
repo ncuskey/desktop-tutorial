@@ -17,3 +17,5 @@ yarn-debug.log*
 yarn-error.log*
 research_outputs/
 sample_data/*.csv
+__pycache__/
+*.pyc
