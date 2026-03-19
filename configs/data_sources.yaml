@@ -42,3 +42,9 @@ providers:
       low: low
       close: close
       volume: tick_volume
+
+api_sources:
+  apilayer_live:
+    endpoint: http://apilayer.net/api/live
+    source: USD
+    access_key_env: APILAYER_ACCESS_KEY

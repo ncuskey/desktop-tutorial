@@ -52,6 +52,30 @@ If you want a local demo run and configured real CSVs are missing:
 python3 run_real_data_evaluation.py --create-demo-if-missing
 ```
 
+### Pull live FX snapshots from API (apilayer)
+
+You can pull live quotes and append canonical rows to `data/real/*.csv`:
+
+```bash
+export APILAYER_ACCESS_KEY="YOUR_KEY"
+python3 fetch_apilayer_live.py --symbols EURUSD,GBPUSD,USDJPY,AUDUSD
+```
+
+Then run the strict WF evaluator:
+
+```bash
+python3 run_real_data_evaluation.py
+```
+
+Or fetch + evaluate in one command:
+
+```bash
+python3 run_real_data_evaluation.py --pull-apilayer-live
+```
+
+Note: the apilayer `/live` endpoint returns point-in-time quotes (not full historical OHLC bars).  
+For robust backtests you still need accumulated snapshots or provider historical endpoints.
+
 ## Notes
 
 - Current default run uses generated sample OHLCV data (`data/sample_ohlcv.csv`).

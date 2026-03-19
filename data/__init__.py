@@ -15,6 +15,11 @@ from .real_loader import (
     load_real_fx_csv,
     normalize_fx_dataframe,
 )
+from .apilayer_loader import (
+    append_snapshot_rows_to_symbol_csv,
+    build_canonical_snapshot,
+    fetch_apilayer_live_quotes,
+)
 
 __all__ = [
     "CostModel",
@@ -30,4 +35,7 @@ __all__ = [
     "infer_timeframe_from_series",
     "load_real_fx_csv",
     "normalize_fx_dataframe",
+    "append_snapshot_rows_to_symbol_csv",
+    "build_canonical_snapshot",
+    "fetch_apilayer_live_quotes",
 ]

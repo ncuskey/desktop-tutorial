@@ -1,11 +1,17 @@
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
 
 import yaml
 
 from data import ensure_mock_ohlcv_csv, load_ohlcv_csv
+from data.apilayer_loader import (
+    append_snapshot_rows_to_symbol_csv,
+    build_canonical_snapshot,
+    fetch_apilayer_live_quotes,
+)
 from research import run_multi_symbol_evaluation
 
 
@@ -37,6 +43,61 @@ def _ensure_demo_real_csvs(symbols_config: str | Path) -> None:
         sym_df.to_csv(filepath, index=False)
 
 
+def _configured_symbols(symbols_config: str | Path) -> list[str]:
+    cfg = _load_yaml(symbols_config)
+    rows = cfg.get("symbols", [])
+    out: list[str] = []
+    for row in rows:
+        symbol = str(row.get("symbol", "")).upper()
+        if len(symbol) == 6:
+            out.append(symbol)
+    return out
+
+
+def _required_currencies_from_symbols(symbols: list[str], source: str) -> list[str]:
+    source = source.upper()
+    cur: set[str] = set()
+    for sym in symbols:
+        base = sym[:3]
+        quote = sym[3:]
+        if base != source:
+            cur.add(base)
+        if quote != source:
+            cur.add(quote)
+    return sorted(cur)
+
+
+def _pull_apilayer_live_snapshot(
+    data_sources_path: str | Path,
+    symbols_path: str | Path,
+    explicit_access_key: str | None = None,
+) -> None:
+    sources = _load_yaml(data_sources_path)
+    api_cfg = sources.get("api_sources", {}).get("apilayer_live", {})
+    endpoint = str(api_cfg.get("endpoint", "http://apilayer.net/api/live"))
+    source = str(api_cfg.get("source", "USD")).upper()
+    key_env = str(api_cfg.get("access_key_env", "APILAYER_ACCESS_KEY"))
+    access_key = explicit_access_key or os.getenv(key_env, "")
+    if not access_key:
+        raise ValueError(f"Missing apilayer key. Set {key_env} or pass --apilayer-access-key.")
+
+    symbols = _configured_symbols(symbols_path)
+    if not symbols:
+        raise ValueError("No valid symbols in symbols config.")
+    currencies = _required_currencies_from_symbols(symbols, source=source)
+    live = fetch_apilayer_live_quotes(
+        access_key=access_key,
+        currencies=currencies,
+        source=source,
+        endpoint=endpoint,
+    )
+    if not live.raw_success:
+        raise RuntimeError(f"apilayer live request failed: {live.raw_error}")
+    snapshot = build_canonical_snapshot(live, symbols=symbols)
+    append_snapshot_rows_to_symbol_csv(snapshot, output_dir="data/real")
+    print(f"Pulled apilayer snapshot at {live.timestamp} for {len(snapshot)} symbol rows.")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Run real-data multi-symbol strict walk-forward evaluation."
@@ -61,10 +122,26 @@ def main() -> None:
         action="store_true",
         help="Create demo CSV files from synthetic sample if configured files are missing.",
     )
+    parser.add_argument(
+        "--pull-apilayer-live",
+        action="store_true",
+        help="Fetch one live apilayer snapshot and append to data/real CSVs before evaluation.",
+    )
+    parser.add_argument(
+        "--apilayer-access-key",
+        default=None,
+        help="Optional apilayer key (defaults to configured env var).",
+    )
     args = parser.parse_args()
 
     if args.create_demo_if_missing:
         _ensure_demo_real_csvs(args.symbols)
+    if args.pull_apilayer_live:
+        _pull_apilayer_live_snapshot(
+            data_sources_path=args.data_sources,
+            symbols_path=args.symbols,
+            explicit_access_key=args.apilayer_access_key,
+        )
 
     results = run_multi_symbol_evaluation(
         data_sources_config=args.data_sources,
