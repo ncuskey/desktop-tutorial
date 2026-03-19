@@ -11,6 +11,12 @@ strategy:
   bollinger_fade:
     path: strategies.mean_reversion:bollinger_fade_signals
     adapter: function_strategy
+  trend_breakout:
+    path: strategies.trend_breakout:trend_breakout_signals
+    adapter: function_strategy
+  mean_reversion_confirmed:
+    path: strategies.mean_reversion_confirmed:mean_reversion_confirmed_signals
+    adapter: function_strategy
 
 orchestrator:
   regime_specialist:

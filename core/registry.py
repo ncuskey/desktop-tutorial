@@ -196,6 +196,18 @@ def register_default_components(registry: ComponentRegistry) -> ComponentRegistr
         adapter="function_strategy",
     )
     registry.register_path(
+        "strategy",
+        "trend_breakout",
+        "strategies.trend_breakout:trend_breakout_signals",
+        adapter="function_strategy",
+    )
+    registry.register_path(
+        "strategy",
+        "mean_reversion_confirmed",
+        "strategies.mean_reversion_confirmed:mean_reversion_confirmed_signals",
+        adapter="function_strategy",
+    )
+    registry.register_path(
         "orchestrator",
         "regime_specialist",
         "orchestrators.regime_specialist:RegimeSpecialistOrchestrator",

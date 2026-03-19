@@ -8,7 +8,9 @@ and return a position series in {-1, 0, +1}.
 from .breakout import range_breakout_signals, volatility_expansion_breakout_signals
 from .carry import carry_proxy_signals
 from .filters import apply_filter
+from .mean_reversion_confirmed import mean_reversion_confirmed_signals
 from .mean_reversion import bollinger_fade_signals, rsi_reversal_signals
+from .trend_breakout import trend_breakout_signals
 from .trend import donchian_breakout_signals, ma_crossover_signals
 
 __all__ = [
@@ -20,4 +22,6 @@ __all__ = [
     "range_breakout_signals",
     "volatility_expansion_breakout_signals",
     "carry_proxy_signals",
+    "trend_breakout_signals",
+    "mean_reversion_confirmed_signals",
 ]
