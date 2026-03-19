@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "forex-strategy-research-lab"
+version = "0.1.0"
+description = "Modular quantitative research framework for Forex strategy evaluation"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "numpy",
+  "pandas",
+  "matplotlib",
+  "seaborn",
+]
+
+[tool.setuptools.packages.find]
+include = ["forex_research_lab*"]
+
+[project.scripts]
+forex-research-lab-prototype = "forex_research_lab.prototype:main"
