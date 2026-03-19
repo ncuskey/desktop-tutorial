@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "forex-lab"
+version = "0.1.0"
+description = "Forex Strategy Research Lab - quantitative research platform for strategy evaluation"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "pandas>=2.0.0",
+    "numpy>=1.24.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "ruff"]
+
+[tool.setuptools]
+packages = ["forex_lab", "forex_lab.data", "forex_lab.strategies", "forex_lab.execution", "forex_lab.metrics", "forex_lab.research", "forex_lab.combinations", "forex_lab.orchestrators"]
+[tool.setuptools.package-dir]
+"forex_lab" = "."
