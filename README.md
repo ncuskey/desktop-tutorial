@@ -96,6 +96,22 @@ Or do it in one step and immediately run strict WF evaluation:
 python3 run_real_data_evaluation.py --pull-duka-history --duka-start 01-01-2024 --duka-end 30-06-2024
 ```
 
+### Run V2 evaluation outputs
+
+To generate the V2 comparison artifacts:
+
+```bash
+python3 run_v2_evaluation.py
+```
+
+This writes:
+- `outputs/v2_sleeve_comparison.csv`
+- `outputs/v2_trade_quality_comparison.csv`
+- `outputs/v2_feature_ablation.csv`
+- `outputs/v2_threshold_stability.csv`
+- `outputs/v2_portfolio_summary.csv`
+- `outputs/v2_portfolio_equity.png`
+
 Meta-label defaults are now configured in `configs/data_sources.yaml`:
 - `method: top_quantile`
 - `quantile: 0.3`

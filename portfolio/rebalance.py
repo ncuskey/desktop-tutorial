@@ -11,9 +11,10 @@ def build_rebalance_mask(index: pd.DatetimeIndex, rule: str = "1D") -> pd.Series
         return pd.Series(dtype=bool)
     idx = pd.DatetimeIndex(index)
     floor = idx.floor(rule)
-    change = floor != floor.shift(1)
-    change[0] = True
-    return pd.Series(change, index=idx, dtype=bool)
+    floor_series = pd.Series(floor, index=idx)
+    change = floor_series != floor_series.shift(1)
+    change.iloc[0] = True
+    return change.astype(bool)
 
 
 def apply_rebalance_schedule(

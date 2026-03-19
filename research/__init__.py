@@ -12,6 +12,7 @@ from .switch_diagnostics import (
     compute_switches_per_1000_bars,
 )
 from .tracking import ExperimentTracker
+from .v2_runner import run_v2_evaluation
 from .walk_forward import WalkForwardResult, run_walk_forward
 
 __all__ = [
@@ -24,6 +25,7 @@ __all__ = [
     "PurgedWalkForwardResult",
     "threshold_stability_report",
     "feature_stability_report",
+    "run_v2_evaluation",
     "compute_switch_diagnostics",
     "compute_regime_duration_stats",
     "compute_switches_per_1000_bars",

@@ -6,7 +6,7 @@ from typing import Literal
 import numpy as np
 import pandas as pd
 
-from core import AllocationResult
+from core.types import AllocationResult
 
 from .rebalance import apply_rebalance_schedule, build_rebalance_mask
 from .risk_budget import apply_weight_constraints, normalize_positive_scores
