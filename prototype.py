@@ -18,16 +18,17 @@ from data import (
 )
 from execution import (
     apply_no_trade_filter_high_vol,
-    apply_volatility_targeting,
     run_backtest,
 )
 from metrics import compute_metrics, compute_metrics_by_regime
 from orchestrators import RegimeSpecialistOrchestrator
-from regime import attach_regime_labels
+from regime import attach_regime_labels, attach_stable_regime_state
 from research import (
     ExperimentTracker,
     bootstrap_returns,
+    compute_regime_duration_stats,
     compute_switch_diagnostics,
+    compute_switches_per_1000_bars,
     grid_parameter_sweep,
     run_walk_forward,
 )
@@ -123,6 +124,16 @@ def _analysis_frame(
             "trend_regime": df["trend_regime"].values,
             "vol_regime": df["vol_regime"].values,
             "regime_label": df["regime_label"].values,
+            "stable_trend_regime": (
+                df["stable_trend_regime"].values
+                if "stable_trend_regime" in df.columns
+                else df["trend_regime"].values
+            ),
+            "stable_regime_label": (
+                df["stable_regime_label"].values
+                if "stable_regime_label" in df.columns
+                else df["regime_label"].values
+            ),
         }
     )
 
@@ -180,6 +191,23 @@ def _save_orchestrated_equity_curve(
     plt.close(fig)
 
 
+def _save_equity_curves_comparison(
+    timestamps: pd.Series,
+    raw_equity: pd.Series,
+    stable_equity: pd.Series,
+) -> None:
+    fig, ax = plt.subplots(figsize=(12, 5))
+    ax.plot(timestamps, raw_equity.values, label="Raw Regime Orchestrator", alpha=0.8)
+    ax.plot(timestamps, stable_equity.values, label="Stable Regime Orchestrator", alpha=0.8)
+    ax.set_title("Raw vs Stable Orchestrator Equity")
+    ax.set_xlabel("Time")
+    ax.set_ylabel("Equity")
+    ax.legend(loc="best")
+    fig.tight_layout()
+    fig.savefig(OUTPUT_DIR / "equity_curves_comparison.png", dpi=150)
+    plt.close(fig)
+
+
 def _save_pnl_by_regime_chart(regime_attribution: pd.DataFrame) -> None:
     label_rows = regime_attribution[regime_attribution["RegimeColumn"] == "regime_label"].copy()
     if label_rows.empty:
@@ -213,7 +241,16 @@ def _collect_regime_metrics(
 ) -> pd.DataFrame:
     analysis_df = _analysis_frame(base_df, returns, position)
     frames: list[pd.DataFrame] = []
-    for regime_column in ("trend_regime", "vol_regime", "regime_label"):
+    candidate_regime_cols = [
+        "trend_regime",
+        "vol_regime",
+        "regime_label",
+        "stable_trend_regime",
+        "stable_regime_label",
+    ]
+    for regime_column in candidate_regime_cols:
+        if regime_column not in analysis_df.columns:
+            continue
         m = compute_metrics_by_regime(
             analysis_df,
             regime_column=regime_column,
@@ -230,9 +267,12 @@ def _build_specialist_signals(
     ma_signal: pd.Series,
     rsi_signal: pd.Series,
     allow_high_vol_entries: bool = False,
+    trend_column: str = "trend_regime",
 ) -> tuple[pd.Series, pd.Series]:
-    ma_filtered = apply_filter(ma_signal, condition=df["trend_regime"] == "TRENDING")
-    rsi_filtered = apply_filter(rsi_signal, condition=df["trend_regime"] == "RANGING")
+    if trend_column not in df.columns:
+        raise ValueError(f"{trend_column} is required for specialist filtering.")
+    ma_filtered = apply_filter(ma_signal, condition=df[trend_column] == "TRENDING")
+    rsi_filtered = apply_filter(rsi_signal, condition=df[trend_column] == "RANGING")
     ma_filtered = apply_no_trade_filter_high_vol(
         ma_filtered, vol_regime=df["vol_regime"], allow_high_vol=allow_high_vol_entries
     )
@@ -253,6 +293,17 @@ def main() -> None:
     df = load_symbol_data(raw, symbol=symbol, timeframe=timeframe)
     df = add_basic_indicators(df)
     df = attach_regime_labels(df, adx_threshold=25.0)
+    df = attach_stable_regime_state(
+        df,
+        raw_regime_col="regime_label",
+        adx_col="adx_14",
+        atr_norm_col="atr_norm",
+        atr_norm_pct_col="atr_norm_pct_rank",
+        enter_trending=28.0,
+        exit_trending=22.0,
+        min_regime_bars=12,
+        confirm_bars=6,
+    )
     cost_model = CostModel(spread_bps=0.8, slippage_bps=0.5, commission_bps=0.3)
     df = attach_costs(df, cost_model)
     df = df.dropna(
@@ -274,7 +325,11 @@ def main() -> None:
     ma_signal = ma_crossover_signals(df, ma_params).astype(float)
     rsi_signal = rsi_reversal_signals(df, rsi_params).astype(float)
     ma_filtered_signal, rsi_filtered_signal = _build_specialist_signals(
-        df, ma_signal, rsi_signal, allow_high_vol_entries=allow_high_vol_entries
+        df,
+        ma_signal,
+        rsi_signal,
+        allow_high_vol_entries=allow_high_vol_entries,
+        trend_column="trend_regime",
     )
 
     filtered_ensemble_signal = weighted_ensemble_signals(
@@ -283,22 +338,48 @@ def main() -> None:
         threshold=0.0,
     ).astype(float)
 
-    specialist_orchestrator = RegimeSpecialistOrchestrator(
+    raw_orchestrator = RegimeSpecialistOrchestrator(
         regime_column="regime_label",
+        stable_regime_column="stable_regime_label",
+        use_stable_regime=False,
         vol_regime_column="vol_regime",
         regime_to_sleeve=_orchestrator_regime_map(),
         fallback="flat",
         sleeve_weights={"trend_sleeve": 1.0, "mean_reversion_sleeve": 1.0},
+        switch_cooldown_bars=0,
+        switch_penalty_bps=0.0,
         allow_high_vol_entries=allow_high_vol_entries,
         use_vol_targeting=True,
         target_atr_norm=0.001,
         max_leverage=1.0,
     )
-    orchestrated_signal = specialist_orchestrator.orchestrate(
+    orchestrated_raw_signal = raw_orchestrator.orchestrate(
         df,
         sleeve_signals={
-            "trend_sleeve": ma_filtered_signal,
-            "mean_reversion_sleeve": rsi_filtered_signal,
+            "trend_sleeve": ma_signal,
+            "mean_reversion_sleeve": rsi_signal,
+        },
+    )
+    stable_orchestrator = RegimeSpecialistOrchestrator(
+        regime_column="regime_label",
+        stable_regime_column="stable_regime_label",
+        use_stable_regime=True,
+        vol_regime_column="vol_regime",
+        regime_to_sleeve=_orchestrator_regime_map(),
+        fallback="flat",
+        sleeve_weights={"trend_sleeve": 1.0, "mean_reversion_sleeve": 1.0},
+        switch_cooldown_bars=12,
+        switch_penalty_bps=0.0,
+        allow_high_vol_entries=allow_high_vol_entries,
+        use_vol_targeting=True,
+        target_atr_norm=0.001,
+        max_leverage=1.0,
+    )
+    orchestrated_stable_signal = stable_orchestrator.orchestrate(
+        df,
+        sleeve_signals={
+            "trend_sleeve": ma_signal,
+            "mean_reversion_sleeve": rsi_signal,
         },
     )
 
@@ -307,7 +388,8 @@ def main() -> None:
     ma_filtered_bt = run_backtest(df, ma_filtered_signal, cost_model=cost_model)
     rsi_filtered_bt = run_backtest(df, rsi_filtered_signal, cost_model=cost_model)
     ensemble_bt = run_backtest(df, filtered_ensemble_signal, cost_model=cost_model)
-    orchestrated_bt = run_backtest(df, orchestrated_signal, cost_model=cost_model)
+    orchestrated_raw_bt = run_backtest(df, orchestrated_raw_signal, cost_model=cost_model)
+    orchestrated_stable_bt = run_backtest(df, orchestrated_stable_signal, cost_model=cost_model)
 
     strategy_results = {
         "MA Baseline": ma_bt,
@@ -315,7 +397,8 @@ def main() -> None:
         "MA Specialist (TRENDING)": ma_filtered_bt,
         "RSI Specialist (RANGING)": rsi_filtered_bt,
         "Filtered Ensemble (Equal Weight)": ensemble_bt,
-        "Regime Specialist Orchestrated": orchestrated_bt,
+        "Regime Orchestrator Raw": orchestrated_raw_bt,
+        "Regime Orchestrator Stable": orchestrated_stable_bt,
     }
     strategy_metrics = {
         name: compute_metrics(
@@ -343,18 +426,26 @@ def main() -> None:
     def _ma_filtered_strategy(frame: pd.DataFrame, params: dict) -> pd.Series:
         base = ma_crossover_signals(frame, params).astype(float)
         filtered, _ = _build_specialist_signals(
-            frame, base, rsi_signal=pd.Series(0.0, index=frame.index), allow_high_vol_entries=False
+            frame,
+            base,
+            rsi_signal=pd.Series(0.0, index=frame.index),
+            allow_high_vol_entries=False,
+            trend_column="trend_regime",
         )
         return filtered
 
     def _rsi_filtered_strategy(frame: pd.DataFrame, params: dict) -> pd.Series:
         base = rsi_reversal_signals(frame, params).astype(float)
         _, filtered = _build_specialist_signals(
-            frame, ma_signal=pd.Series(0.0, index=frame.index), rsi_signal=base, allow_high_vol_entries=False
+            frame,
+            ma_signal=pd.Series(0.0, index=frame.index),
+            rsi_signal=base,
+            allow_high_vol_entries=False,
+            trend_column="trend_regime",
         )
         return filtered
 
-    def _orchestrated_strategy(frame: pd.DataFrame, params: dict) -> pd.Series:
+    def _orchestrated_strategy(frame: pd.DataFrame, params: dict, use_stable: bool) -> pd.Series:
         ma_local = ma_crossover_signals(
             frame,
             {"fast": int(params["ma_fast"]), "slow": int(params["ma_slow"])},
@@ -368,15 +459,16 @@ def main() -> None:
                 "exit_level": float(params["rsi_exit"]),
             },
         ).astype(float)
-        ma_spec, rsi_spec = _build_specialist_signals(
-            frame, ma_local, rsi_local, allow_high_vol_entries=False
-        )
         local_orchestrator = RegimeSpecialistOrchestrator(
             regime_column="regime_label",
+            stable_regime_column="stable_regime_label",
+            use_stable_regime=use_stable,
             vol_regime_column="vol_regime",
             regime_to_sleeve=_orchestrator_regime_map(),
             fallback="flat",
             sleeve_weights={"trend_sleeve": 1.0, "mean_reversion_sleeve": 1.0},
+            switch_cooldown_bars=12 if use_stable else 0,
+            switch_penalty_bps=0.0,
             allow_high_vol_entries=False,
             use_vol_targeting=True,
             target_atr_norm=0.001,
@@ -385,8 +477,8 @@ def main() -> None:
         return local_orchestrator.orchestrate(
             frame,
             sleeve_signals={
-                "trend_sleeve": ma_spec,
-                "mean_reversion_sleeve": rsi_spec,
+                "trend_sleeve": ma_local,
+                "mean_reversion_sleeve": rsi_local,
             },
         )
 
@@ -430,15 +522,25 @@ def main() -> None:
         timeframe=timeframe,
         regime_column="regime_label",
     )
-    wf_orchestrated = run_walk_forward(
+    wf_orchestrated_raw = run_walk_forward(
         df=df,
-        strategy_fn=_orchestrated_strategy,
+        strategy_fn=lambda frame, params: _orchestrated_strategy(frame, params, use_stable=False),
         param_grid=orchestrated_grid,
         train_bars=train_bars,
         test_bars=test_bars,
         cost_model=cost_model,
         timeframe=timeframe,
         regime_column="regime_label",
+    )
+    wf_orchestrated_stable = run_walk_forward(
+        df=df,
+        strategy_fn=lambda frame, params: _orchestrated_strategy(frame, params, use_stable=True),
+        param_grid=orchestrated_grid,
+        train_bars=train_bars,
+        test_bars=test_bars,
+        cost_model=cost_model,
+        timeframe=timeframe,
+        regime_column="stable_regime_label",
     )
 
     ma_bootstrap_dist, ma_bootstrap_summary = bootstrap_returns(
@@ -466,18 +568,32 @@ def main() -> None:
         strategy_metrics["RSI Specialist (RANGING)"],
     )
     tracker.log_run(
-        "regime_specialist_orchestrated",
-        {"regime_to_sleeve": _orchestrator_regime_map(), "vol_targeting": True},
+        "regime_orchestrator_raw",
+        {"regime_to_sleeve": _orchestrator_regime_map(), "stable_state": False},
         symbol,
         timeframe,
-        strategy_metrics["Regime Specialist Orchestrated"],
+        strategy_metrics["Regime Orchestrator Raw"],
+    )
+    tracker.log_run(
+        "regime_orchestrator_stable",
+        {"regime_to_sleeve": _orchestrator_regime_map(), "stable_state": True},
+        symbol,
+        timeframe,
+        strategy_metrics["Regime Orchestrator Stable"],
     )
     tracker.log_run("ma_filtered_walk_forward", {}, symbol, timeframe, wf_ma_filtered.aggregate_metrics)
     tracker.log_run(
         "rsi_filtered_walk_forward", {}, symbol, timeframe, wf_rsi_filtered.aggregate_metrics
     )
     tracker.log_run(
-        "orchestrated_walk_forward", {}, symbol, timeframe, wf_orchestrated.aggregate_metrics
+        "orchestrated_raw_walk_forward", {}, symbol, timeframe, wf_orchestrated_raw.aggregate_metrics
+    )
+    tracker.log_run(
+        "orchestrated_stable_walk_forward",
+        {},
+        symbol,
+        timeframe,
+        wf_orchestrated_stable.aggregate_metrics,
     )
 
     regime_attribution = pd.concat(
@@ -502,17 +618,42 @@ def main() -> None:
                 timeframe,
             ),
             _collect_regime_metrics(
-                "Regime Specialist Orchestrated",
+                "Regime Orchestrator Raw",
                 df,
-                orchestrated_bt.returns,
-                orchestrated_bt.position,
+                orchestrated_raw_bt.returns,
+                orchestrated_raw_bt.position,
+                timeframe,
+            ),
+            _collect_regime_metrics(
+                "Regime Orchestrator Stable",
+                df,
+                orchestrated_stable_bt.returns,
+                orchestrated_stable_bt.position,
                 timeframe,
             ),
         ],
         ignore_index=True,
     )
 
-    switch_diagnostics = compute_switch_diagnostics(df["regime_label"], orchestrated_bt.returns, n_bars=24)
+    switch_raw = compute_switch_diagnostics(df["regime_label"], orchestrated_raw_bt.returns, n_bars=24)
+    switch_raw["RegimeSource"] = "raw"
+    switch_stable = compute_switch_diagnostics(
+        df["stable_regime_label"], orchestrated_stable_bt.returns, n_bars=24
+    )
+    switch_stable["RegimeSource"] = "stable"
+    switch_diagnostics = pd.concat([switch_raw, switch_stable], ignore_index=True)
+
+    duration_raw = compute_regime_duration_stats(df["regime_label"])
+    duration_raw["RegimeSource"] = "raw"
+    duration_stable = compute_regime_duration_stats(df["stable_regime_label"])
+    duration_stable["RegimeSource"] = "stable"
+    regime_duration_stats = pd.concat([duration_raw, duration_stable], ignore_index=True)
+
+    switches_raw = compute_switches_per_1000_bars(df["regime_label"])
+    switches_raw["RegimeSource"] = "raw"
+    switches_stable = compute_switches_per_1000_bars(df["stable_regime_label"])
+    switches_stable["RegimeSource"] = "stable"
+    switches_per_1000 = pd.concat([switches_raw, switches_stable], ignore_index=True)
 
     comparison_rows = [
         _strategy_metrics_row("MA Baseline", strategy_metrics["MA Baseline"], "InSample"),
@@ -529,8 +670,13 @@ def main() -> None:
             "InSample",
         ),
         _strategy_metrics_row(
-            "Regime Specialist Orchestrated",
-            strategy_metrics["Regime Specialist Orchestrated"],
+            "Regime Orchestrator Raw",
+            strategy_metrics["Regime Orchestrator Raw"],
+            "InSample",
+        ),
+        _strategy_metrics_row(
+            "Regime Orchestrator Stable",
+            strategy_metrics["Regime Orchestrator Stable"],
             "InSample",
         ),
         _strategy_metrics_row("MA Baseline", wf_ma.aggregate_metrics, "WalkForward"),
@@ -542,10 +688,55 @@ def main() -> None:
             "RSI Specialist (RANGING)", wf_rsi_filtered.aggregate_metrics, "WalkForward"
         ),
         _strategy_metrics_row(
-            "Regime Specialist Orchestrated", wf_orchestrated.aggregate_metrics, "WalkForward"
+            "Regime Orchestrator Raw", wf_orchestrated_raw.aggregate_metrics, "WalkForward"
+        ),
+        _strategy_metrics_row(
+            "Regime Orchestrator Stable", wf_orchestrated_stable.aggregate_metrics, "WalkForward"
         ),
     ]
     specialist_vs_orchestrated = _build_strategy_comparison_table(comparison_rows)
+
+    stable_vs_raw_orchestrator = _build_strategy_comparison_table(
+        [
+            _strategy_metrics_row(
+                "Regime Orchestrator Raw",
+                strategy_metrics["Regime Orchestrator Raw"],
+                "InSample",
+            ),
+            _strategy_metrics_row(
+                "Regime Orchestrator Stable",
+                strategy_metrics["Regime Orchestrator Stable"],
+                "InSample",
+            ),
+            _strategy_metrics_row(
+                "Regime Orchestrator Raw",
+                wf_orchestrated_raw.aggregate_metrics,
+                "WalkForward",
+            ),
+            _strategy_metrics_row(
+                "Regime Orchestrator Stable",
+                wf_orchestrated_stable.aggregate_metrics,
+                "WalkForward",
+            ),
+        ]
+    )
+    switch_summary = switch_diagnostics[
+        [
+            "RegimeSource",
+            "SwitchCount",
+            "SwitchesPer1000Bars",
+            "AvgReturnAfterSwitch",
+            "PctSwitchesImproveNextNExpectancy",
+        ]
+    ].copy()
+    switch_summary["Strategy"] = switch_summary["RegimeSource"].map(
+        {"raw": "Regime Orchestrator Raw", "stable": "Regime Orchestrator Stable"}
+    )
+    stable_vs_raw_orchestrator = stable_vs_raw_orchestrator.merge(
+        switch_summary,
+        on="Strategy",
+        how="left",
+    )
 
     metrics_table = pd.DataFrame(
         [
@@ -553,12 +744,14 @@ def main() -> None:
             {"Strategy": "RSI Reversal (In-Sample)", **strategy_metrics["RSI Baseline"]},
             {"Strategy": "MA Crossover Filtered (In-Sample)", **strategy_metrics["MA Specialist (TRENDING)"]},
             {"Strategy": "RSI Reversal Filtered (In-Sample)", **strategy_metrics["RSI Specialist (RANGING)"]},
-            {"Strategy": "Orchestrated Specialist (In-Sample)", **strategy_metrics["Regime Specialist Orchestrated"]},
+            {"Strategy": "Orchestrated Raw (In-Sample)", **strategy_metrics["Regime Orchestrator Raw"]},
+            {"Strategy": "Orchestrated Stable (In-Sample)", **strategy_metrics["Regime Orchestrator Stable"]},
             {"Strategy": "MA Crossover (Walk-Forward)", **wf_ma.aggregate_metrics},
             {"Strategy": "RSI Reversal (Walk-Forward)", **wf_rsi.aggregate_metrics},
             {"Strategy": "MA Filtered (Walk-Forward)", **wf_ma_filtered.aggregate_metrics},
             {"Strategy": "RSI Filtered (Walk-Forward)", **wf_rsi_filtered.aggregate_metrics},
-            {"Strategy": "Orchestrated Specialist (Walk-Forward)", **wf_orchestrated.aggregate_metrics},
+            {"Strategy": "Orchestrated Raw (Walk-Forward)", **wf_orchestrated_raw.aggregate_metrics},
+            {"Strategy": "Orchestrated Stable (Walk-Forward)", **wf_orchestrated_stable.aggregate_metrics},
         ]
     )
 
@@ -568,12 +761,18 @@ def main() -> None:
     specialist_vs_orchestrated.to_csv(
         OUTPUT_DIR / "specialist_vs_orchestrated_comparison.csv", index=False
     )
+    stable_vs_raw_orchestrator.to_csv(
+        OUTPUT_DIR / "stable_vs_raw_orchestrator_comparison.csv", index=False
+    )
     switch_diagnostics.to_csv(OUTPUT_DIR / "switch_diagnostics.csv", index=False)
+    regime_duration_stats.to_csv(OUTPUT_DIR / "regime_duration_stats.csv", index=False)
+    switches_per_1000.to_csv(OUTPUT_DIR / "switches_per_1000_bars.csv", index=False)
     wf_ma.fold_results.to_csv(OUTPUT_DIR / "walk_forward_ma_folds.csv", index=False)
     wf_rsi.fold_results.to_csv(OUTPUT_DIR / "walk_forward_rsi_folds.csv", index=False)
     wf_ma_filtered.fold_results.to_csv(OUTPUT_DIR / "walk_forward_ma_filtered_folds.csv", index=False)
     wf_rsi_filtered.fold_results.to_csv(OUTPUT_DIR / "walk_forward_rsi_filtered_folds.csv", index=False)
-    wf_orchestrated.fold_results.to_csv(OUTPUT_DIR / "walk_forward_orchestrated_folds.csv", index=False)
+    wf_orchestrated_raw.fold_results.to_csv(OUTPUT_DIR / "walk_forward_orchestrated_raw_folds.csv", index=False)
+    wf_orchestrated_stable.fold_results.to_csv(OUTPUT_DIR / "walk_forward_orchestrated_stable_folds.csv", index=False)
     ma_bootstrap_dist.to_csv(OUTPUT_DIR / "bootstrap_ma_distribution.csv", index=False)
     rsi_bootstrap_dist.to_csv(OUTPUT_DIR / "bootstrap_rsi_distribution.csv", index=False)
 
@@ -597,12 +796,18 @@ def main() -> None:
             "RSI Filtered": pd.DataFrame(
                 {"equity": rsi_filtered_bt.equity, "drawdown": rsi_filtered_bt.drawdown}
             ),
-            "Orchestrated": pd.DataFrame(
-                {"equity": orchestrated_bt.equity, "drawdown": orchestrated_bt.drawdown}
+            "Orchestrated Raw": pd.DataFrame(
+                {"equity": orchestrated_raw_bt.equity, "drawdown": orchestrated_raw_bt.drawdown}
+            ),
+            "Orchestrated Stable": pd.DataFrame(
+                {"equity": orchestrated_stable_bt.equity, "drawdown": orchestrated_stable_bt.drawdown}
             ),
         },
     )
-    _save_orchestrated_equity_curve(df["timestamp"], orchestrated_bt.equity)
+    _save_orchestrated_equity_curve(df["timestamp"], orchestrated_stable_bt.equity)
+    _save_equity_curves_comparison(
+        df["timestamp"], orchestrated_raw_bt.equity, orchestrated_stable_bt.equity
+    )
     _save_heatmap(ma_sweep)
     _save_sharpe_by_regime_chart(regime_attribution)
     _save_pnl_by_regime_chart(regime_attribution)
@@ -621,6 +826,8 @@ def main() -> None:
     print(metrics_table.round(4).to_string(index=False))
     print("\nSpecialist vs orchestrated comparison:")
     print(specialist_vs_orchestrated.round(4).to_string(index=False))
+    print("\nStable vs raw orchestrator comparison:")
+    print(stable_vs_raw_orchestrator.round(4).to_string(index=False))
     print(f"Outputs written to: {OUTPUT_DIR.resolve()}")
 
 
