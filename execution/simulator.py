@@ -18,19 +18,29 @@ class BacktestResult:
     trades: pd.DataFrame
 
 
+def _position_side(value: float, eps: float = 1e-12) -> int:
+    if value > eps:
+        return 1
+    if value < -eps:
+        return -1
+    return 0
+
+
 def _extract_trades(returns: pd.Series, position: pd.Series) -> pd.DataFrame:
     trades: list[dict] = []
     current_side = 0
     start_idx = None
+    start_bar = None
     acc_return = 0.0
 
     for i in range(len(position)):
-        side = int(position.iloc[i])
+        side = _position_side(float(position.iloc[i]))
         r = float(returns.iloc[i])
 
         if current_side == 0 and side != 0:
             current_side = side
             start_idx = position.index[i]
+            start_bar = i
             acc_return = r
             continue
 
@@ -40,25 +50,30 @@ def _extract_trades(returns: pd.Series, position: pd.Series) -> pd.DataFrame:
 
         if current_side != 0 and side != current_side:
             end_idx = position.index[i]
+            holding_bars = max(i - (start_bar or 0), 1)
             trades.append(
                 {
                     "entry_time": start_idx,
                     "exit_time": end_idx,
                     "side": current_side,
                     "trade_return": acc_return,
+                    "holding_bars": float(holding_bars),
                 }
             )
             current_side = side
             start_idx = position.index[i] if side != 0 else None
+            start_bar = i if side != 0 else None
             acc_return = r if side != 0 else 0.0
 
     if current_side != 0 and start_idx is not None:
+        final_holding_bars = max(len(position) - (start_bar or 0), 1)
         trades.append(
             {
                 "entry_time": start_idx,
                 "exit_time": position.index[-1],
                 "side": current_side,
                 "trade_return": acc_return,
+                "holding_bars": float(final_holding_bars),
             }
         )
 

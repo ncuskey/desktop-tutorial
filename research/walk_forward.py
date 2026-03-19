@@ -45,6 +45,7 @@ def run_walk_forward(
 ) -> WalkForwardResult:
     folds: list[dict] = []
     stitched_returns: list[np.ndarray] = []
+    stitched_positions: list[np.ndarray] = []
     stitched_index: list = []
     aggregated_trades: list[pd.DataFrame] = []
 
@@ -67,7 +68,11 @@ def run_walk_forward(
             test_df, strategy_fn=strategy_fn, params=best_params, cost_model=cost_model
         )
         test_metrics = compute_metrics(
-            test_bt.returns, test_bt.equity, test_bt.trades, timeframe=timeframe
+            test_bt.returns,
+            test_bt.equity,
+            test_bt.trades,
+            timeframe=timeframe,
+            position=test_bt.position,
         )
 
         regime_return_breakdown: dict[str, float] = {}
@@ -95,6 +100,7 @@ def run_walk_forward(
         )
 
         stitched_returns.append(test_bt.returns.to_numpy())
+        stitched_positions.append(test_bt.position.to_numpy())
         stitched_index.extend(test_df["timestamp"].values.tolist())
         if not test_bt.trades.empty:
             aggregated_trades.append(test_bt.trades.copy())
@@ -108,6 +114,11 @@ def run_walk_forward(
         index=pd.to_datetime(stitched_index, utc=True),
         name="returns",
     ).sort_index()
+    combined_position = pd.Series(
+        data=np.concatenate(stitched_positions),
+        index=pd.to_datetime(stitched_index, utc=True),
+        name="position",
+    ).sort_index()
     combined_equity = (1.0 + combined_returns).cumprod() * 100_000.0
     combined_drawdown = (combined_equity / combined_equity.cummax()) - 1.0
 
@@ -117,7 +128,11 @@ def run_walk_forward(
         else pd.DataFrame()
     )
     aggregate_metrics = compute_metrics(
-        combined_returns, combined_equity, combined_trades, timeframe=timeframe
+        combined_returns,
+        combined_equity,
+        combined_trades,
+        timeframe=timeframe,
+        position=combined_position,
     )
 
     return WalkForwardResult(

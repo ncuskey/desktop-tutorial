@@ -12,6 +12,7 @@ def compute_metrics(
     equity: pd.Series,
     trades: pd.DataFrame,
     timeframe: str = "H1",
+    position: pd.Series | None = None,
 ) -> dict[str, float]:
     ppy = TIMEFRAME_TO_PERIODS.get(timeframe.upper(), 24 * 252)
     clean_returns = returns.dropna()
@@ -43,6 +44,7 @@ def compute_metrics(
         win_rate = 0.0
         expectancy = 0.0
         trade_count = 0.0
+        avg_holding_bars = 0.0
     else:
         tr = trades["trade_return"]
         gross_profit = tr[tr > 0].sum()
@@ -51,6 +53,14 @@ def compute_metrics(
         win_rate = float((tr > 0).mean()) if len(tr) > 0 else 0.0
         expectancy = float(tr.mean()) if len(tr) > 0 else 0.0
         trade_count = float(len(tr))
+        avg_holding_bars = (
+            float(trades["holding_bars"].mean()) if "holding_bars" in trades.columns else 0.0
+        )
+
+    if position is None:
+        exposure_pct = float((returns != 0).mean()) if len(returns) > 0 else 0.0
+    else:
+        exposure_pct = float((position.abs() > 1e-12).mean())
 
     return {
         "CAGR": float(cagr),
@@ -61,6 +71,8 @@ def compute_metrics(
         "WinRate": float(win_rate),
         "Expectancy": float(expectancy),
         "TradeCount": trade_count,
+        "ExposurePct": exposure_pct,
+        "AvgHoldingBars": avg_holding_bars,
     }
 
 
@@ -86,6 +98,7 @@ def compute_metrics_by_regime(
             rows.append(
                 {
                     "Regime": regime,
+                    "PnL": 0.0,
                     "Sharpe": 0.0,
                     "CAGR": 0.0,
                     "MaxDrawdown": 0.0,
@@ -103,6 +116,7 @@ def compute_metrics_by_regime(
         std_r = returns.std(ddof=0)
         sharpe = float(np.sqrt(ppy) * (returns.mean() / std_r)) if std_r > 0 else 0.0
         max_dd = float(((equity / equity.cummax()) - 1.0).min())
+        pnl = float(returns.sum())
 
         trade_count = 0.0
         if position_column in g.columns:
@@ -113,6 +127,7 @@ def compute_metrics_by_regime(
         rows.append(
             {
                 "Regime": regime,
+                "PnL": pnl,
                 "Sharpe": sharpe,
                 "CAGR": float(cagr),
                 "MaxDrawdown": max_dd,
