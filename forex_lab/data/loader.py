@@ -18,7 +18,7 @@ def ensure_sample_data(
     data_dir: str | Path,
     symbols: Iterable[str] = SYMBOLS,
     periods: int = 24 * 365 * 2,
-    freq: str = "H",
+    freq: str = "h",
     seed: int = 42,
 ) -> None:
     """Create reproducible synthetic OHLCV CSVs if they do not exist."""

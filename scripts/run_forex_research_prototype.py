@@ -1,9 +1,14 @@
 from __future__ import annotations
 
 from pathlib import Path
+import sys
 from typing import Dict, Tuple
 
 import pandas as pd
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 from forex_lab.data import (
     add_basic_indicators,
@@ -19,9 +24,14 @@ from forex_lab.strategies import ma_crossover_signals, rsi_reversal_signals
 
 
 def _timeframe_to_pandas_rule(timeframe: str) -> str:
-    mapping = {"H1": "1H", "H4": "4H", "D1": "1D"}
+    mapping = {"H1": "1h", "H4": "4h", "D1": "1d"}
     if timeframe not in mapping:
         raise ValueError(f"Unsupported timeframe {timeframe}. Use one of {list(mapping)}")
+    return mapping[timeframe]
+
+
+def _periods_per_year(timeframe: str) -> int:
+    mapping = {"H1": 24 * 252, "H4": 6 * 252, "D1": 252}
     return mapping[timeframe]
 
 
@@ -57,7 +67,7 @@ def run_experiment(
     signal_fn,
     param_candidates: list[dict],
     timeframe: str,
-) -> Tuple[Dict[str, float], pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+) -> Tuple[Dict[str, float], pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.Series]:
     wf = run_walk_forward(
         df=df,
         signal_fn=signal_fn,
@@ -72,13 +82,13 @@ def run_experiment(
     folds = wf.fold_results.copy()
     metrics = wf.aggregate_metrics
     metrics["strategy"] = strategy_name
-    return metrics, equity, drawdown, folds
+    return metrics, equity, drawdown, folds, wf.aggregated_result.returns
 
 
 def main() -> None:
     symbol = "EURUSD"
     timeframe = "H1"
-    output_root = Path("forex_lab/outputs") / f"prototype_{pd.Timestamp.utcnow().strftime('%Y%m%d_%H%M%S')}"
+    output_root = Path("forex_lab/outputs") / f"prototype_{pd.Timestamp.now('UTC').strftime('%Y%m%d_%H%M%S')}"
     output_root.mkdir(parents=True, exist_ok=True)
 
     df = prepare_dataset(symbol=symbol, timeframe=timeframe)
@@ -100,7 +110,7 @@ def main() -> None:
         ("ma_crossover", ma_crossover_signals, ma_params),
         ("rsi_reversal", rsi_reversal_signals, rsi_params),
     ]:
-        metrics, equity, drawdown, folds = run_experiment(
+        metrics, equity, drawdown, folds, wf_returns = run_experiment(
             df=df,
             strategy_name=strategy_name,
             signal_fn=fn,
@@ -120,12 +130,11 @@ def main() -> None:
         folds.to_csv(output_root / f"{strategy_name}_walk_forward_folds.csv", index=False)
 
         # Robustness check via bootstrap on OOS walk-forward returns.
-        wf = run_walk_forward(df=df, signal_fn=fn, param_candidates=params, train_bars=1500, test_bars=500, timeframe=timeframe)
         boot = bootstrap_returns(
-            wf.aggregated_result.returns,
+            wf_returns,
             n_bootstrap=300,
             ruin_threshold=0.8,
-            periods_per_year=24 * 252,
+            periods_per_year=_periods_per_year(timeframe),
         )
         boot["distribution"].to_csv(output_root / f"{strategy_name}_bootstrap_distribution.csv", index=False)
         pd.DataFrame([{"risk_of_ruin": boot["risk_of_ruin"]}]).to_csv(
