@@ -20,12 +20,19 @@ DEFAULT_COLUMN_ALIASES: dict[str, tuple[str, ...]] = {
 }
 
 
-def _detect_source_column(df: pd.DataFrame, target: str, column_map: dict[str, str] | None) -> str | None:
+def _detect_source_column(
+    df: pd.DataFrame,
+    target: str,
+    column_map: dict[str, str] | None,
+    required: bool = False,
+) -> str | None:
     if column_map and target in column_map:
         mapped = column_map[target]
         if mapped in df.columns:
             return mapped
-        raise ValueError(f"Column map provided {target} -> {mapped}, but source column not found.")
+        if required:
+            raise ValueError(f"Column map provided {target} -> {mapped}, but source column not found.")
+        return None
     for alias in DEFAULT_COLUMN_ALIASES.get(target, ()):
         if alias in df.columns:
             return alias
@@ -90,13 +97,13 @@ def load_real_fx_csv(
     if src.empty:
         raise ValueError(f"Source file has no rows: {filepath}")
 
-    col_ts = _detect_source_column(src, "timestamp", column_map)
-    col_open = _detect_source_column(src, "open", column_map)
-    col_high = _detect_source_column(src, "high", column_map)
-    col_low = _detect_source_column(src, "low", column_map)
-    col_close = _detect_source_column(src, "close", column_map)
-    col_volume = _detect_source_column(src, "volume", column_map)
-    col_spread = _detect_source_column(src, "spread_bps", column_map)
+    col_ts = _detect_source_column(src, "timestamp", column_map, required=True)
+    col_open = _detect_source_column(src, "open", column_map, required=True)
+    col_high = _detect_source_column(src, "high", column_map, required=True)
+    col_low = _detect_source_column(src, "low", column_map, required=True)
+    col_close = _detect_source_column(src, "close", column_map, required=True)
+    col_volume = _detect_source_column(src, "volume", column_map, required=False)
+    col_spread = _detect_source_column(src, "spread_bps", column_map, required=False)
 
     missing_required = [name for name, col in {
         "timestamp": col_ts,
