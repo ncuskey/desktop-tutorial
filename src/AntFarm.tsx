@@ -14,12 +14,13 @@ const AntFarm: React.FC = () => {
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    const context = canvas.getContext('2d');
+    if (!context) return;
 
     // Store in non-null variables for use in nested functions
     const canvasWidth = canvas.width;
     const canvasHeight = canvas.height;
+    const ctx: CanvasRenderingContext2D = context;
 
     function draw() {
       const grid = gridRef.current;
