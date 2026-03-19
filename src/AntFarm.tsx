@@ -25,16 +25,17 @@ const AntFarm: React.FC = () => {
     function draw() {
       const grid = gridRef.current;
 
-      // Draw sand
-      ctx.fillStyle = '#deb887';
-      ctx.fillRect(0, 0, canvasWidth, canvasHeight);
-
-      // Clear empty cells
-      ctx.fillStyle = '#ffffff';
+      // Draw all cells
       for (let y = 0; y < HEIGHT; y++) {
         for (let x = 0; x < WIDTH; x++) {
-          if (grid[y][x] === 0) {
-            ctx.clearRect(x * SCALE, y * SCALE, SCALE, SCALE);
+          if (grid[y][x] === 1) {
+            // Sand
+            ctx.fillStyle = '#deb887';
+            ctx.fillRect(x * SCALE, y * SCALE, SCALE, SCALE);
+          } else {
+            // Empty space (tunnel)
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(x * SCALE, y * SCALE, SCALE, SCALE);
           }
         }
       }
