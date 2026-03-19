@@ -206,6 +206,7 @@ def run_walk_forward(
         fold_row = {
             "fold_start": train_df["timestamp"].iloc[0],
             "fold_train_end": train_df["timestamp"].iloc[-1],
+            "fold_test_start": test_df["timestamp"].iloc[0],
             "fold_test_end": test_df["timestamp"].iloc[-1],
             "best_params": best_params,
             "train_objective": float(best[objective_metric]),

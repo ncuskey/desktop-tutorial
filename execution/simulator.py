@@ -98,9 +98,11 @@ def run_backtest(
     gross_returns = position * price_returns
 
     position_change = raw_position.diff().abs().fillna(raw_position.abs())
-    one_way_cost = (
-        cost_model.spread_bps + cost_model.slippage_bps + cost_model.commission_bps
-    ) / 10_000.0
+    if "spread_bps" in df.columns:
+        spread_bps = pd.to_numeric(df["spread_bps"], errors="coerce").fillna(cost_model.spread_bps)
+    else:
+        spread_bps = pd.Series(cost_model.spread_bps, index=df.index, dtype=float)
+    one_way_cost = (spread_bps + cost_model.slippage_bps + cost_model.commission_bps) / 10_000.0
     costs = position_change * one_way_cost
     net_returns = gross_returns - costs
 

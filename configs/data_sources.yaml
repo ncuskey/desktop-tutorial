@@ -1,0 +1,44 @@
+defaults:
+  source_type: real
+  timezone: UTC
+  timeframe: H1
+  train_bars: 800
+  test_bars: 200
+  meta_filter:
+    target_filter_rate: 0.4
+    horizon_bars: 24
+    success_threshold: 0.0002
+    min_train_samples: 30
+  cost_model:
+    spread_bps: 0.8
+    slippage_bps: 0.5
+    commission_bps: 0.3
+  cost_overrides:
+    EURUSD:
+      spread_bps: 0.5
+    USDJPY:
+      spread_bps: 0.6
+    GBPUSD:
+      spread_bps: 0.9
+    AUDUSD:
+      spread_bps: 0.8
+
+providers:
+  generic_ohlc:
+    column_map:
+      timestamp: timestamp
+      open: open
+      high: high
+      low: low
+      close: close
+      volume: volume
+      spread_bps: spread_bps
+
+  mt_style:
+    column_map:
+      timestamp: time
+      open: open
+      high: high
+      low: low
+      close: close
+      volume: tick_volume

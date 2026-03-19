@@ -114,3 +114,34 @@ def load_symbol_data(df: pd.DataFrame, symbol: str, timeframe: str = "1H") -> pd
     if pandas_tf != "1h":
         filtered = resample_ohlcv(filtered, pandas_tf)
     return filtered.sort_values("timestamp").reset_index(drop=True)
+
+
+def load_dataset(
+    source: str | Path | pd.DataFrame,
+    symbol: str,
+    timeframe: str = "H1",
+    source_type: str = "mock",
+    column_map: dict[str, str] | None = None,
+    timezone: str | None = None,
+) -> pd.DataFrame:
+    """Load either mock/synthetic CSV or real provider CSV into canonical symbol dataset."""
+    if isinstance(source, pd.DataFrame):
+        return load_symbol_data(source, symbol=symbol, timeframe=timeframe)
+
+    source_type_l = source_type.lower()
+    if source_type_l in {"mock", "synthetic"}:
+        df = load_ohlcv_csv(source)
+        return load_symbol_data(df, symbol=symbol, timeframe=timeframe)
+
+    if source_type_l == "real":
+        from data.real_loader import load_real_fx_csv, normalize_fx_dataframe
+
+        real = load_real_fx_csv(
+            filepath=source,
+            symbol=symbol,
+            column_map=column_map,
+            timezone=timezone,
+        )
+        return normalize_fx_dataframe(real, symbol=symbol, timeframe=timeframe)
+
+    raise ValueError("source_type must be one of: mock, synthetic, real")

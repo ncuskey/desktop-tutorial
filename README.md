@@ -11,6 +11,7 @@ Production-oriented quantitative research framework for evaluating FX strategies
 - **Metrics & validation**: `metrics/`, `research/`
 - **Meta-labeling decision layer**: `metalabel/`
 - **Runnable experiment entrypoint**: `prototype.py`
+- **Real-data multi-symbol runner**: `run_real_data_evaluation.py`
 
 ## Core capabilities
 
@@ -32,6 +33,24 @@ python3 prototype.py
 ```
 
 Artifacts are written to `outputs/`.
+
+### Real historical multi-symbol evaluation
+
+1. Configure data sources in:
+   - `configs/data_sources.yaml`
+   - `configs/symbols.yaml`
+2. Point each symbol to a real CSV path and provider column map.
+3. Run:
+
+```bash
+python3 run_real_data_evaluation.py
+```
+
+If you want a local demo run and configured real CSVs are missing:
+
+```bash
+python3 run_real_data_evaluation.py --create-demo-if-missing
+```
 
 ## Notes
 

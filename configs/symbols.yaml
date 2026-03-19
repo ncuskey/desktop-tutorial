@@ -1,0 +1,20 @@
+symbols:
+  - symbol: EURUSD
+    filepath: data/real/EURUSD_H1.csv
+    provider: generic_ohlc
+    timeframe: H1
+
+  - symbol: GBPUSD
+    filepath: data/real/GBPUSD_H1.csv
+    provider: generic_ohlc
+    timeframe: H1
+
+  - symbol: USDJPY
+    filepath: data/real/USDJPY_H1.csv
+    provider: generic_ohlc
+    timeframe: H1
+
+  - symbol: AUDUSD
+    filepath: data/real/AUDUSD_H1.csv
+    provider: generic_ohlc
+    timeframe: H1
