@@ -18,7 +18,9 @@ TASK: Write lore about "${userTopic}". Return JSON with { title, type, tags, lor
     model: 'gpt-4o',
     messages: [{ role: 'system', content: prompt }],
   });
-  const newLore = JSON.parse(chatRes.choices[0].message.content);
+  const content = chatRes.choices[0].message.content;
+  if (!content) throw new Error('No content returned from OpenAI');
+  const newLore = JSON.parse(content);
   await embedAndStoreLoreEntry(
     `lore-${Date.now()}`,
     newLore.title,

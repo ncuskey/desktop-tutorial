@@ -3,7 +3,7 @@ import type {
   Mesh, MapData, State, Road, Cell, Burg,
   StateOptions, RoadOptions,
   ElevationParams, Constraints, RiverParams
-} from '../../worker';
+} from '../worker';
 import {
   generateMesh, assignElevation, assignRivers,
   loadMapJSON, generateStates, generateRoads
@@ -15,9 +15,27 @@ import {
 // Define combined status type
 type Status = 'loading' | 'ready' | 'updatingHooks' | 'error';
 
-export interface AdventureHook { /* … */ }
-export interface WorldState { /* … */ }
-export interface WorldLore { /* … */ }
+export interface AdventureHook { 
+  id: string;
+  description: string;
+  completed?: boolean;
+}
+
+export interface WorldState { 
+  hooks: AdventureHook[];
+  mesh?: Mesh;
+  peaks?: number[];
+  elevationT?: Float32Array;
+  elevationR?: Float32Array;
+  flowT?: Float32Array;
+  mapData?: MapData;
+  states?: State[];
+  roads?: Road[];
+}
+
+export interface WorldLore { 
+  [key: string]: any;
+}
 export interface QuestOutcome { questID: string; success: boolean; }
 
 const STORAGE_KEY = 'world-state';

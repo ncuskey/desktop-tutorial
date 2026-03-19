@@ -1,4 +1,4 @@
-import type { State } from '../worker';
+import type { State } from './worker';
 import type { AdventureHook } from './hooks/useWorld';
 
 /** Outcome of a quest reported to the lore engine. */

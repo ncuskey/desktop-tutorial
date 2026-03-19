@@ -157,3 +157,20 @@ worker.onmessage = (event) => {
   }
 };
 ```
+
+## Cursor Cloud specific instructions
+
+### Services overview
+
+| Service | Command | Port | Notes |
+|---|---|---|---|
+| React dev server (Ant Farm UI) | `npx react-scripts@5.0.1 start` | 3000 | `react-scripts` in `package.json` is `0.0.0` (stub); use this instead of `npm start` |
+| Express API server | `npx ts-node src/server.ts` | 3001 | Requires `OPENAI_API_KEY` and Pinecone env vars for real lore/hooks generation |
+| Tests | `npm test` | — | Jest with ts-jest; tests use mocks, no external API keys needed |
+
+### Caveats
+
+- `react-scripts` is pinned to `0.0.0` in `package.json`, which is a non-functional stub. To run the CRA dev server, use `npx react-scripts@5.0.1 start` directly. Do **not** rely on `npm start`.
+- `npx tsc --noEmit` reports pre-existing type errors (missing modules like `./mesh`, `./map`, nullable canvas context, etc.). These do not block the CRA dev server or tests — CRA's Webpack build is more lenient.
+- The Express backend (`src/server.ts`) uses OpenAI and Pinecone cloud APIs. Tests mock these dependencies, so `npm test` runs without API keys.
+- The main `App.tsx` currently renders only the `AntFarm` component. The map generation components (`MapCanvas`, `useWorld`, `workerClient`) exist but are not wired into the app entrypoint.

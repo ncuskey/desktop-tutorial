@@ -8,5 +8,7 @@ export async function generateAdventureHooksFromLore(lore: any) {
     model: 'gpt-4o',
     messages: [{ role: 'user', content: prompt }],
   });
-  return JSON.parse(chatRes.choices[0].message.content);
+  const content = chatRes.choices[0].message.content;
+  if (!content) throw new Error('No content returned from OpenAI');
+  return JSON.parse(content);
 }
