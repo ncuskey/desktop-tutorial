@@ -17,12 +17,16 @@ const AntFarm: React.FC = () => {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
+    // Store in non-null variables for use in nested functions
+    const canvasWidth = canvas.width;
+    const canvasHeight = canvas.height;
+
     function draw() {
       const grid = gridRef.current;
 
       // Draw sand
       ctx.fillStyle = '#deb887';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 
       // Clear empty cells
       ctx.fillStyle = '#ffffff';
