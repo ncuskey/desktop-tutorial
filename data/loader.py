@@ -14,7 +14,7 @@ def ensure_mock_ohlcv_csv(
     path: str | Path,
     symbols: Iterable[str] = DEFAULT_SYMBOLS,
     periods: int = 2_400,
-    freq: str = "1H",
+    freq: str = "1h",
     seed: int = 7,
 ) -> Path:
     output_path = Path(path)
@@ -23,7 +23,8 @@ def ensure_mock_ohlcv_csv(
         return output_path
 
     rng = np.random.default_rng(seed)
-    idx = pd.date_range("2020-01-01", periods=periods, freq=freq, tz="UTC")
+    normalized_freq = freq.replace("H", "h").replace("D", "d")
+    idx = pd.date_range("2020-01-01", periods=periods, freq=normalized_freq, tz="UTC")
     frames: list[pd.DataFrame] = []
 
     for i, symbol in enumerate(symbols):
@@ -102,12 +103,14 @@ def load_symbol_data(df: pd.DataFrame, symbol: str, timeframe: str = "1H") -> pd
     if timeframe.upper() not in {"1H", "4H", "1D", "H1", "H4", "D1"}:
         raise ValueError("Unsupported timeframe. Use H1/H4/D1 equivalents.")
 
-    normalized = timeframe.upper().replace("H", "H").replace("D", "D")
-    pandas_tf = {"H1": "1H", "H4": "4H", "D1": "1D"}.get(normalized, normalized)
+    normalized = timeframe.upper()
+    pandas_tf = {"H1": "1h", "H4": "4h", "D1": "1d", "1H": "1h", "4H": "4h", "1D": "1d"}[
+        normalized
+    ]
 
     filtered = df[df["symbol"] == symbol].copy()
     if filtered.empty:
         raise ValueError(f"Symbol {symbol} not found in data.")
-    if pandas_tf != "1H":
+    if pandas_tf != "1h":
         filtered = resample_ohlcv(filtered, pandas_tf)
     return filtered.sort_values("timestamp").reset_index(drop=True)

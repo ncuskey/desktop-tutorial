@@ -44,6 +44,7 @@ def run_walk_forward(
     folds: list[dict] = []
     stitched_returns: list[np.ndarray] = []
     stitched_index: list = []
+    aggregated_trades: list[pd.DataFrame] = []
 
     i = 0
     while i + train_bars + test_bars <= len(df):
@@ -80,6 +81,8 @@ def run_walk_forward(
 
         stitched_returns.append(test_bt.returns.to_numpy())
         stitched_index.extend(test_df["timestamp"].values.tolist())
+        if not test_bt.trades.empty:
+            aggregated_trades.append(test_bt.trades.copy())
         i += test_bars
 
     if not stitched_returns:
@@ -93,8 +96,13 @@ def run_walk_forward(
     combined_equity = (1.0 + combined_returns).cumprod() * 100_000.0
     combined_drawdown = (combined_equity / combined_equity.cummax()) - 1.0
 
+    combined_trades = (
+        pd.concat(aggregated_trades, ignore_index=True)
+        if aggregated_trades
+        else pd.DataFrame()
+    )
     aggregate_metrics = compute_metrics(
-        combined_returns, combined_equity, pd.DataFrame(), timeframe=timeframe
+        combined_returns, combined_equity, combined_trades, timeframe=timeframe
     )
 
     return WalkForwardResult(
