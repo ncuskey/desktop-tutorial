@@ -23,7 +23,7 @@ def _trend_state_with_hysteresis(
 
     out: list[str] = []
     current = "TRENDING" if float(adx.iloc[0]) >= enter_trending else "RANGING"
-    for value in adx.fillna(method="ffill").fillna(0.0):
+    for value in adx.ffill().fillna(0.0):
         if current == "RANGING" and value > enter_trending:
             current = "TRENDING"
         elif current == "TRENDING" and value < exit_trending:
@@ -73,7 +73,7 @@ def _stabilize_labels(
     if min_regime_bars < 1 or confirm_bars < 1:
         raise ValueError("min_regime_bars and confirm_bars must be >= 1")
 
-    labels = raw_labels.fillna(method="ffill").fillna("UNKNOWN").astype(str)
+    labels = raw_labels.ffill().fillna("UNKNOWN").astype(str)
     stable = []
 
     current = labels.iloc[0]
