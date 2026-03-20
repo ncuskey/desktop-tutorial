@@ -63,3 +63,11 @@ historical_sources:
     mode: BID
     threads: 20
     semaphore: 50
+
+v21:
+  candidate_top_n: 3
+  longer_history_start: null
+  longer_history_end: null
+  use_purged_candidates: false
+  purge_bars: 0
+  embargo_bars: 0

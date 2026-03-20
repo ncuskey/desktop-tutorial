@@ -112,6 +112,23 @@ This writes:
 - `outputs/v2_portfolio_summary.csv`
 - `outputs/v2_portfolio_equity.png`
 
+### Run V2.1 refinement pass
+
+To generate ranking/pruning/candidate-validation refinement artifacts:
+
+```bash
+python3 run_v21_refinement.py
+```
+
+This writes:
+- `outputs/v21_filter_rate_diagnostics.csv`
+- `outputs/v21_sleeve_symbol_ranking.csv`
+- `outputs/v21_component_decisions.csv`
+- `outputs/v21_feature_pruning.csv`
+- `outputs/v21_feature_group_summary.csv`
+- `outputs/v21_candidate_validation.csv`
+- `outputs/v21_candidate_equity.png`
+
 Meta-label defaults are now configured in `configs/data_sources.yaml`:
 - `method: top_quantile`
 - `quantile: 0.3`
