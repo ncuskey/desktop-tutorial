@@ -83,6 +83,8 @@ def run_walk_forward(
     drawdown_improved: list[bool] = []
     avg_signal_strength_filtered: list[float] = []
     avg_signal_strength_unfiltered: list[float] = []
+    filter_rate_errors: list[float] = []
+    threshold_clipped_flags: list[bool] = []
 
     i = 0
     while i + train_bars + test_bars <= len(df):
@@ -116,6 +118,11 @@ def run_walk_forward(
         fold_filter_rate = 0.0
         fold_threshold = np.nan
         meta_state_json = "{}"
+        target_filter_rate_band = [float(meta_filter_kwargs.get("min_filter_rate", 0.2)), float(meta_filter_kwargs.get("max_filter_rate", 0.6))]
+        target_filter_rate_midpoint = float(np.mean(target_filter_rate_band))
+        train_realized_filter_rate = np.nan
+        threshold_clipped = False
+        score_distribution_summary: dict[str, float] = {}
 
         if use_meta and meta_feature_builder is not None and meta_label_builder is not None:
             train_features = meta_feature_builder(train_df, train_signal)
@@ -173,7 +180,26 @@ def run_walk_forward(
                 )
                 fold_threshold = float(getattr(meta_model, "threshold", np.nan))
                 if hasattr(meta_model, "to_dict"):
-                    meta_state_json = json.dumps(meta_model.to_dict(), sort_keys=True)
+                    model_dict = meta_model.to_dict()
+                    meta_state_json = json.dumps(model_dict, sort_keys=True)
+                    calibration = model_dict.get("calibration", {}) or {}
+                    band = calibration.get("target_filter_rate_band", model_dict.get("target_filter_rate_band"))
+                    if isinstance(band, list) and len(band) == 2:
+                        target_filter_rate_band = [float(band[0]), float(band[1])]
+                    target_filter_rate_midpoint = float(
+                        calibration.get(
+                            "target_filter_rate_midpoint",
+                            np.mean(target_filter_rate_band),
+                        )
+                    )
+                    train_realized_filter_rate = float(
+                        calibration.get("realized_filter_rate", np.nan)
+                    )
+                    threshold_clipped = bool(calibration.get("threshold_clipped", False))
+                    raw_summary = calibration.get("score_distribution_summary", {}) or {}
+                    score_distribution_summary = {
+                        str(k): float(v) for k, v in raw_summary.items() if v is not None
+                    }
                 if len(X_test_events) > 0:
                     if hasattr(meta_model, "apply"):
                         filtered_signal, meta_take, meta_proba = meta_model.apply(
@@ -218,6 +244,9 @@ def run_walk_forward(
                 else:
                     avg_signal_strength_unfiltered.append(0.0)
                     avg_signal_strength_filtered.append(0.0)
+            if np.isfinite(target_filter_rate_midpoint):
+                filter_rate_errors.append(float(fold_filter_rate - target_filter_rate_midpoint))
+            threshold_clipped_flags.append(bool(threshold_clipped))
 
             filtered_bt = run_backtest(test_df, filtered_signal, cost_model=cost_model)
             filtered_metrics = compute_metrics(
@@ -269,7 +298,17 @@ def run_walk_forward(
             "test_regime_return_breakdown": json.dumps(regime_return_breakdown, sort_keys=True),
             "test_regime_time_pct": json.dumps(regime_time_pct, sort_keys=True),
             "meta_filter_rate": float(fold_filter_rate),
+            "meta_realized_filter_rate": float(fold_filter_rate),
             "meta_threshold": None if np.isnan(fold_threshold) else float(fold_threshold),
+            "meta_threshold_selected": None if np.isnan(fold_threshold) else float(fold_threshold),
+            "meta_threshold_clipped": bool(threshold_clipped),
+            "meta_target_filter_rate_band": json.dumps(target_filter_rate_band),
+            "meta_target_filter_rate_midpoint": float(target_filter_rate_midpoint),
+            "meta_train_realized_filter_rate": None
+            if np.isnan(train_realized_filter_rate)
+            else float(train_realized_filter_rate),
+            "meta_score_distribution_summary": json.dumps(score_distribution_summary, sort_keys=True),
+            "meta_filter_rate_error": float(fold_filter_rate - target_filter_rate_midpoint),
             "meta_state": meta_state_json,
             "meta_label_method": meta_label_method,
             "meta_filter_type": dominant_filter_type,
@@ -389,6 +428,11 @@ def run_walk_forward(
             if avg_signal_strength_unfiltered
             else 0.0,
             "LabelMethod": meta_label_method,
+            "AvgFilterRateError": float(np.mean(filter_rate_errors)) if filter_rate_errors else 0.0,
+            "StdFilterRateError": float(np.std(filter_rate_errors)) if filter_rate_errors else 0.0,
+            "PctThresholdClipped": float(np.mean(threshold_clipped_flags))
+            if threshold_clipped_flags
+            else 0.0,
         }
 
     return WalkForwardResult(

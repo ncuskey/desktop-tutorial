@@ -6,6 +6,8 @@ defaults:
   test_bars: 200
   meta_filter:
     target_filter_rate: 0.4
+    min_filter_rate: 0.2
+    max_filter_rate: 0.6
     forward_horizon: 24
     method: top_quantile
     quantile: 0.3

@@ -33,6 +33,7 @@ class RuleBasedMetaFilter:
     feature_columns: list[str] = field(default_factory=list)
     type_models: dict[str, dict[str, Any]] = field(default_factory=dict)
     latest_filter_type_used: pd.Series | None = None
+    calibration: dict[str, Any] = field(default_factory=dict)
     fitted_: bool = False
 
     def _fit_single_state(
@@ -107,28 +108,55 @@ class RuleBasedMetaFilter:
         else:
             returns_s = y.reindex(X.index).astype(float)
 
-        threshold = self._optimize_threshold(
+        calibration = self._optimize_threshold(
             proba=proba_s,
             forward_returns=returns_s,
         )
-        state["threshold"] = float(threshold)
+        state["threshold"] = float(calibration["threshold"])
+        state["calibration"] = calibration
         return state
 
     def _optimize_threshold(
         self,
         proba: pd.Series,
         forward_returns: pd.Series,
-    ) -> float:
+    ) -> dict[str, Any]:
         p = proba.astype(float).dropna()
         r = forward_returns.reindex(p.index).astype(float).fillna(0.0)
         if p.empty:
-            return 0.5
+            return {
+                "threshold": 0.5,
+                "realized_filter_rate": 0.0,
+                "target_filter_rate_band": [float(self.min_filter_rate), float(self.max_filter_rate)],
+                "target_filter_rate_midpoint": float(
+                    (self.min_filter_rate + self.max_filter_rate) / 2.0
+                ),
+                "threshold_clipped": True,
+                "score_distribution_summary": {
+                    "min": 0.0,
+                    "p10": 0.0,
+                    "p50": 0.0,
+                    "p90": 0.0,
+                    "max": 0.0,
+                    "mean": 0.0,
+                    "std": 0.0,
+                },
+            }
 
         q_grid = np.linspace(0.05, 0.95, 37)
         candidates = sorted({float(p.quantile(q)) for q in q_grid} | {0.5})
-        best: tuple[float, float, float, float] | None = None
-        best_thr = 0.5
-        target = float(np.clip(self.target_filter_rate, self.min_filter_rate, self.max_filter_rate))
+        target_mid = float((self.min_filter_rate + self.max_filter_rate) / 2.0)
+        score_summary = {
+            "min": float(p.min()),
+            "p10": float(p.quantile(0.10)),
+            "p50": float(p.quantile(0.50)),
+            "p90": float(p.quantile(0.90)),
+            "max": float(p.max()),
+            "mean": float(p.mean()),
+            "std": float(p.std(ddof=0)),
+        }
+
+        records: list[dict[str, float | bool]] = []
 
         for thr in candidates:
             take = p >= thr
@@ -146,17 +174,65 @@ class RuleBasedMetaFilter:
             expectancy = float(kept.mean()) if not kept.empty else -np.inf
             std = float(kept.std(ddof=0)) if len(kept) > 1 else 0.0
             sharpe = float((kept.mean() / std) if std > 1e-12 else (1e6 if expectancy > 0 else -1e6))
-            tie = -abs(filter_rate - target)
-            key = (expectancy, sharpe, tie, -filter_rate)
-            if best is None or key > best:
-                best = key
-                best_thr = float(thr)
+            in_band = self.min_filter_rate <= filter_rate <= self.max_filter_rate
+            dist_mid = abs(filter_rate - target_mid)
+            records.append(
+                {
+                    "threshold": float(thr),
+                    "filter_rate": float(filter_rate),
+                    "expectancy": float(expectancy),
+                    "sharpe": float(sharpe),
+                    "in_band": bool(in_band),
+                    "dist_mid": float(dist_mid),
+                }
+            )
 
-        if best is not None:
-            return best_thr
+        if not records:
+            fallback_q = float(np.clip(1.0 - target_mid, 0.01, 0.99))
+            fallback_thr = float(p.quantile(fallback_q))
+            fallback_rate = float(1.0 - (p >= fallback_thr).mean())
+            return {
+                "threshold": fallback_thr,
+                "realized_filter_rate": fallback_rate,
+                "target_filter_rate_band": [float(self.min_filter_rate), float(self.max_filter_rate)],
+                "target_filter_rate_midpoint": float(target_mid),
+                "threshold_clipped": True,
+                "score_distribution_summary": score_summary,
+            }
 
-        fallback_q = float(np.clip(1.0 - target, 0.01, 0.99))
-        return float(p.quantile(fallback_q))
+        in_band_records = [r for r in records if bool(r["in_band"])]
+        if in_band_records:
+            chosen = sorted(
+                in_band_records,
+                key=lambda x: (
+                    float(x["expectancy"]),
+                    float(x["sharpe"]),
+                    -float(x["dist_mid"]),
+                ),
+                reverse=True,
+            )[0]
+            threshold_clipped = False
+        else:
+            # No threshold can satisfy the strict bounds with available candidate set.
+            # Choose the closest threshold to the target midpoint, then maximize expectancy.
+            chosen = sorted(
+                records,
+                key=lambda x: (
+                    float(x["dist_mid"]),
+                    -float(x["expectancy"]),
+                    -float(x["sharpe"]),
+                ),
+            )[0]
+            threshold_clipped = True
+
+        return {
+            "threshold": float(chosen["threshold"]),
+            "realized_filter_rate": float(chosen["filter_rate"]),
+            "target_filter_rate_band": [float(self.min_filter_rate), float(self.max_filter_rate)],
+            "target_filter_rate_midpoint": float(target_mid),
+            "threshold_clipped": bool(threshold_clipped),
+            "score_distribution_summary": score_summary,
+        }
 
     def fit(
         self,
@@ -183,6 +259,7 @@ class RuleBasedMetaFilter:
         self.numeric_stds = dict(global_state["numeric_stds"])
         self.bias = float(global_state["bias"])
         self.threshold = float(global_state["threshold"])
+        self.calibration = dict(global_state.get("calibration", {}))
         self.type_models = {}
 
         if filter_type is not None:
@@ -339,8 +416,10 @@ class RuleBasedMetaFilter:
     def to_dict(self) -> dict:
         return {
             "target_filter_rate": float(self.target_filter_rate),
+            "target_filter_rate_band": [float(self.min_filter_rate), float(self.max_filter_rate)],
             "threshold": float(self.threshold),
             "bias": float(self.bias),
+            "calibration": dict(self.calibration),
             "feature_columns": list(self.feature_columns),
             "numeric_weights": dict(self.numeric_weights),
             "numeric_medians": dict(self.numeric_medians),
@@ -354,6 +433,7 @@ class RuleBasedMetaFilter:
                 t: {
                     "threshold": float(m.get("threshold", 0.5)),
                     "feature_columns": list(m.get("feature_columns", [])),
+                    "calibration": dict(m.get("calibration", {})),
                 }
                 for t, m in self.type_models.items()
             },
