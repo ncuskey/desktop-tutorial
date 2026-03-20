@@ -10,32 +10,47 @@ from .filter_rule_based import RuleBasedMetaFilter
 from .labels import compute_forward_trade_returns, create_trade_success_labels
 
 
+def _max_drawdown_from_returns(returns: pd.Series) -> float:
+    if returns.empty:
+        return 0.0
+    equity = (1.0 + returns.fillna(0.0)).cumprod()
+    dd = (equity / equity.cummax()) - 1.0
+    return float(dd.min())
+
+
+def _sharpe_from_returns(returns: pd.Series, periods_per_year: int = 24 * 252) -> float:
+    r = returns.dropna().astype(float)
+    if r.empty:
+        return 0.0
+    std = float(r.std(ddof=0))
+    if std <= 1e-12:
+        return 0.0
+    return float((r.mean() / std) * (periods_per_year**0.5))
+
+
 def _default_feature_groups(columns: list[str]) -> dict[str, list[str]]:
     groups: dict[str, list[str]] = {
-        "regime": [],
-        "volatility": [],
-        "trend": [],
-        "mean_reversion": [],
-        "market_state": [],
-        "trade_context": [],
-        "trade_relative": [],
+        "regime_features": [],
+        "volatility_features": [],
+        "trend_structure_features": [],
+        "mean_reversion_features": [],
+        "trade_context_features": [],
+        "timing_features": [],
     }
     for c in columns:
         lc = c.lower()
         if c in {"stable_trend_regime", "stable_vol_regime", "filter_type"}:
-            groups["regime"].append(c)
+            groups["regime_features"].append(c)
         elif "atr" in lc or "vol" in lc:
-            groups["volatility"].append(c)
+            groups["volatility_features"].append(c)
         elif "adx" in lc or "ma" in lc or "trend" in lc:
-            groups["trend"].append(c)
+            groups["trend_structure_features"].append(c)
         elif "rsi" in lc or "bb_" in lc or "dist_to_bb" in lc:
-            groups["mean_reversion"].append(c)
-        elif "momentum" in lc or "range_compression" in lc:
-            groups["market_state"].append(c)
-        elif "bars_since" in lc or "time_since" in lc or "holding" in lc:
-            groups["trade_context"].append(c)
+            groups["mean_reversion_features"].append(c)
         elif c in {"signal_strength", "position_in_range", "distance_to_high", "distance_to_low"}:
-            groups["trade_relative"].append(c)
+            groups["trade_context_features"].append(c)
+        elif "bars_since" in lc or "time_since" in lc or "holding" in lc or "momentum" in lc or "range_compression" in lc:
+            groups["timing_features"].append(c)
     return {k: v for k, v in groups.items() if v}
 
 
@@ -86,6 +101,12 @@ def run_feature_ablation(
                     "expectancy_unfiltered": 0.0,
                     "expectancy_filtered": 0.0,
                     "expectancy_delta": 0.0,
+                    "sharpe_unfiltered": 0.0,
+                    "sharpe_filtered": 0.0,
+                    "sharpe_delta": 0.0,
+                    "maxdd_unfiltered": 0.0,
+                    "maxdd_filtered": 0.0,
+                    "maxdd_delta": 0.0,
                     "filter_rate": 0.0,
                     "samples": int(len(event_idx)),
                     "status": "insufficient_samples",
@@ -124,6 +145,12 @@ def run_feature_ablation(
                     "expectancy_unfiltered": float(r_test.mean()) if not r_test.empty else 0.0,
                     "expectancy_filtered": float(r_test.mean()) if not r_test.empty else 0.0,
                     "expectancy_delta": 0.0,
+                    "sharpe_unfiltered": _sharpe_from_returns(r_test),
+                    "sharpe_filtered": _sharpe_from_returns(r_test),
+                    "sharpe_delta": 0.0,
+                    "maxdd_unfiltered": _max_drawdown_from_returns(r_test),
+                    "maxdd_filtered": _max_drawdown_from_returns(r_test),
+                    "maxdd_delta": 0.0,
                     "filter_rate": 0.0,
                     "samples": int(len(X_test)),
                     "status": "insufficient_train",
@@ -140,6 +167,10 @@ def run_feature_ablation(
         kept = r_test.loc[take == 1]
         exp_unf = float(r_test.mean()) if not r_test.empty else 0.0
         exp_f = float(kept.mean()) if not kept.empty else 0.0
+        sharpe_unf = _sharpe_from_returns(r_test)
+        sharpe_f = _sharpe_from_returns(kept)
+        maxdd_unf = _max_drawdown_from_returns(r_test)
+        maxdd_f = _max_drawdown_from_returns(kept)
         filter_rate = float((take == 0).mean()) if len(take) > 0 else 0.0
         rows.append(
             {
@@ -147,6 +178,12 @@ def run_feature_ablation(
                 "expectancy_unfiltered": exp_unf,
                 "expectancy_filtered": exp_f,
                 "expectancy_delta": exp_f - exp_unf,
+                "sharpe_unfiltered": sharpe_unf,
+                "sharpe_filtered": sharpe_f,
+                "sharpe_delta": sharpe_f - sharpe_unf,
+                "maxdd_unfiltered": maxdd_unf,
+                "maxdd_filtered": maxdd_f,
+                "maxdd_delta": maxdd_f - maxdd_unf,
                 "filter_rate": filter_rate,
                 "samples": int(len(X_test)),
                 "status": "ok",
