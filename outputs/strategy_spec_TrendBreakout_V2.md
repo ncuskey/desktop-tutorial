@@ -1,11 +1,11 @@
 # Strategy Specification: TrendBreakout_V2
 
-- Version: `TrendBreakout_V2_R1`
+- Version: `TrendBreakout_V2_R1_FINAL`
 - Symbols: `EURUSD`
 - Timeframe: `H1`
 - Data Range: `2020-01-05T00:00:00+00:00` to `2021-02-12T03:00:00+00:00`
-- Timestamp (UTC): `2026-03-24T21:13:04.780578+00:00`
-- Commit: `332cea7`
+- Timestamp (UTC): `2026-03-24T21:47:04.577042+00:00`
+- Commit: `4f46f6a`
 
 ## Overview
 | Field | Value |
@@ -143,6 +143,25 @@ HARDENED_DEFAULT for TrendBreakout_V2 on EURUSD (H1) targets a reproducible posi
 | positive_components | [{"component_test": "partial_tp_off", "delta_expectancy": 0.0005027178586762, "delta_sharpe": 0.5085253209958265, "delta_max_drawdown": -2.220446049250313e-16, "delta_robust_score": 0.6450327517004584}, {"component_test": "winner_extension_on", "delta_expectancy": 0.0001404609029742, "delta_sharpe": 0.2513318865775635, "delta_max_drawdown": -4.440892098500626e-16, "delta_robust_score": 0.2047958880116576}, {"component_test": "contraction_exit_loose", "delta_expectancy": 0.0001217439357895, "delta_sharpe": -0.113069999562671, "delta_max_drawdown": -0.0022132352490444, "delta_robust_score": 0.050755847892062}] |
 | negative_components | [{"component_test": "contraction_exit_tight", "delta_expectancy": -0.0003756949868449, "delta_sharpe": -0.706251789565223, "delta_max_drawdown": -0.0012781183738883, "delta_robust_score": -0.6148327885909766}, {"component_test": "retest_entry_on", "delta_expectancy": 0.0, "delta_sharpe": 0.0, "delta_max_drawdown": 0.0, "delta_robust_score": 0.0}, {"component_test": "retest_entry_off", "delta_expectancy": 0.0, "delta_sharpe": 0.0, "delta_max_drawdown": 0.0, "delta_robust_score": 0.0}] |
 | neutral_components | [{"component_test": "retest_entry_on", "delta_expectancy": 0.0, "delta_sharpe": 0.0, "delta_max_drawdown": 0.0, "delta_robust_score": 0.0}, {"component_test": "retest_entry_off", "delta_expectancy": 0.0, "delta_sharpe": 0.0, "delta_max_drawdown": 0.0, "delta_robust_score": 0.0}, {"component_test": "winner_extension_off", "delta_expectancy": 0.0, "delta_sharpe": 0.0, "delta_max_drawdown": 0.0, "delta_robust_score": 0.0}, {"component_test": "partial_tp_on", "delta_expectancy": 0.0, "delta_sharpe": 0.0, "delta_max_drawdown": 0.0, "delta_robust_score": 0.0}, {"component_test": "dynamic_cooldown_off", "delta_expectancy": 0.0, "delta_sharpe": 0.0, "delta_max_drawdown": 0.0, "delta_robust_score": 0.0}] |
+
+## Cross-Symbol Validation
+### Per-Symbol Results
+| Symbol | Expectancy | Sharpe | MaxDD | Classification |
+|---|---:|---:|---:|---|
+| EURUSD | 0.0007654015473434 | 0.973467941167683 | -0.0061061822869274 | REJECT |
+| GBPUSD | 0.0017007476773515 | 1.1994828050640107 | -0.0021569261154581 | REJECT |
+| AUDUSD | 0.0009801395875796 | 0.5409864403620183 | -0.0037450649585671 | REJECT |
+
+### Overall Classification
+`REJECT` (PROMOTE=0, CONDITIONAL=0, REJECT=3)
+
+### Parameter Alignment Summary
+| Field | Value |
+|---|---|
+| parameter_count | 23 |
+| mean_alignment_score | 0.7955204216073782 |
+| high_alignment_pct | 0.5217391304347826 |
+| low_alignment_params | ["confirmation_bars", "dynamic_cooldown_by_vol", "extension_stop_multiplier", "extension_trigger_atr_multiple", "high_vol_cooldown_mult", "min_bars_between_trades", "partial_take_profit_rr", "partial_take_profit_size", "trailing_stop_atr_mult", "velocity_lookback", "winner_extension_enabled"] |
 
 ## Promotion Status
 **Status:** `HOLD`

@@ -1,0 +1,2 @@
+strategy_family,symbol,timeframe,bar_count,candidate_count,search_method,use_purge,purge_bars,embargo_bars,best_peak_expectancy,best_robust_score,best_hardened_expectancy,best_hardened_sharpe,best_hardened_max_drawdown
+TrendBreakout_V2,GBPUSD,H1,9904,40,random,False,0,0,0.0017007476773515738,1.9142697228559835,0.0017007476773515738,1.1994828050640107,-0.0021569261154581465

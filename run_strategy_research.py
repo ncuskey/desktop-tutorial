@@ -25,6 +25,16 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--purge-bars", type=int, default=0)
     parser.add_argument("--embargo-bars", type=int, default=0)
     parser.add_argument("--output-dir", default="outputs")
+    parser.add_argument(
+        "--symbol-scoped-output",
+        action="store_true",
+        help="Write artifacts to <output-dir>/<strategy-family>/<symbol>/",
+    )
+    parser.add_argument(
+        "--source-csv",
+        default="outputs/strategy_research_mock_ohlcv.csv",
+        help="Path to shared source CSV used by the R1 runner.",
+    )
     return parser
 
 
@@ -45,7 +55,12 @@ def main() -> None:
         use_purge=(args.purge_bars > 0 or args.embargo_bars > 0),
         purge_bars=args.purge_bars,
         embargo_bars=args.embargo_bars,
-        output_dir=args.output_dir,
+        output_dir=(
+            f"{args.output_dir}/{args.strategy_family}/{args.symbol}"
+            if args.symbol_scoped_output
+            else args.output_dir
+        ),
+        source_csv=args.source_csv,
     )
 
     print("Strategy research run completed.")

@@ -32,6 +32,7 @@ class StrategySpec:
     robustness_assessment: dict[str, Any]
     failure_modes: dict[str, Any]
     component_insights: dict[str, Any]
+    cross_symbol_validation: dict[str, Any]
     promotion_status: dict[str, Any]
     next_steps: list[str]
 
@@ -500,6 +501,82 @@ def _git_commit_hash(repo_root: Path) -> str | None:
         return None
 
 
+def _load_cross_symbol_validation(output_dir: Path, strategy: str) -> dict[str, Any]:
+    summary_path = output_dir / "strategy_promotion_summary.csv"
+    overview_path = output_dir / "strategy_promotion_overview.csv"
+    alignment_path = output_dir / "strategy_parameter_alignment.csv"
+
+    if not (summary_path.exists() and overview_path.exists()):
+        return {
+            "available": False,
+            "message": "Cross-symbol promotion artifacts not found.",
+            "per_symbol": [],
+            "overall_classification": None,
+            "counts": {},
+            "parameter_alignment_summary": {},
+        }
+
+    summary = pd.read_csv(summary_path)
+    if "strategy_name" in summary.columns:
+        filtered = summary[summary["strategy_name"].astype(str) == strategy]
+        if not filtered.empty:
+            summary = filtered
+
+    overview = pd.read_csv(overview_path)
+    if "strategy_name" in overview.columns:
+        filtered_overview = overview[overview["strategy_name"].astype(str) == strategy]
+        if not filtered_overview.empty:
+            overview = filtered_overview
+    overview_row = overview.iloc[0] if not overview.empty else pd.Series(dtype=object)
+
+    per_symbol: list[dict[str, Any]] = []
+    for _, row in summary.iterrows():
+        per_symbol.append(
+            {
+                "symbol": str(row.get("symbol", "")),
+                "expectancy": _safe_float(row.get("expectancy"), default=np.nan),
+                "sharpe": _safe_float(row.get("sharpe"), default=np.nan),
+                "max_dd": _safe_float(row.get("max_dd"), default=np.nan),
+                "classification": str(row.get("classification", "")),
+            }
+        )
+
+    alignment_summary: dict[str, Any] = {}
+    if alignment_path.exists():
+        alignment = pd.read_csv(alignment_path)
+        if not alignment.empty and "alignment_score" in alignment.columns:
+            scores = pd.to_numeric(alignment["alignment_score"], errors="coerce").dropna()
+            alignment_summary = {
+                "parameter_count": int(len(alignment)),
+                "mean_alignment_score": float(scores.mean()) if not scores.empty else np.nan,
+                "high_alignment_pct": float((scores >= 0.8).mean()) if not scores.empty else np.nan,
+                "low_alignment_params": alignment.loc[scores.index[scores < 0.8], "parameter_name"].astype(str).tolist()
+                if not scores.empty
+                else [],
+            }
+        else:
+            alignment_summary = {
+                "parameter_count": int(len(alignment)),
+                "mean_alignment_score": np.nan,
+                "high_alignment_pct": np.nan,
+                "low_alignment_params": [],
+            }
+
+    counts = {
+        "n_promote": int(_safe_float(overview_row.get("n_promote"), default=0)),
+        "n_conditional": int(_safe_float(overview_row.get("n_conditional"), default=0)),
+        "n_reject": int(_safe_float(overview_row.get("n_reject"), default=0)),
+    }
+
+    return {
+        "available": True,
+        "per_symbol": per_symbol,
+        "overall_classification": str(overview_row.get("overall_classification", "")) if not overview.empty else None,
+        "counts": counts,
+        "parameter_alignment_summary": alignment_summary,
+    }
+
+
 def build_strategy_spec(
     strategy: str,
     symbol: str | None = None,
@@ -528,6 +605,7 @@ def build_strategy_spec(
     sensitivity = _top_sensitivity_rows(robustness)
     false_peaks = _false_peak_summary(robustness)
     components = _component_insights(ablation)
+    cross_symbol_validation = _load_cross_symbol_validation(output_path, strategy=strategy)
 
     perf = {
         "oos_expectancy": _safe_float(hardened.get("OOS_Expectancy")),
@@ -646,6 +724,7 @@ def build_strategy_spec(
         robustness_assessment=robust_payload,
         failure_modes=failure_modes,
         component_insights=components,
+        cross_symbol_validation=cross_symbol_validation,
         promotion_status=promotion,
         next_steps=next_steps,
     )
@@ -706,6 +785,37 @@ def render_strategy_spec_markdown(spec: StrategySpec) -> str:
     lines.append("")
     lines.append("## Component Insights")
     lines.append(_dict_markdown_table(spec.component_insights))
+    lines.append("")
+    lines.append("## Cross-Symbol Validation")
+    if not spec.cross_symbol_validation.get("available"):
+        lines.append(str(spec.cross_symbol_validation.get("message", "Not available.")))
+    else:
+        lines.append("### Per-Symbol Results")
+        per_symbol = spec.cross_symbol_validation.get("per_symbol", [])
+        if per_symbol:
+            rows = ["| Symbol | Expectancy | Sharpe | MaxDD | Classification |", "|---|---:|---:|---:|---|"]
+            for row in per_symbol:
+                rows.append(
+                    "| {symbol} | {expectancy} | {sharpe} | {max_dd} | {classification} |".format(
+                        symbol=row.get("symbol", ""),
+                        expectancy=row.get("expectancy"),
+                        sharpe=row.get("sharpe"),
+                        max_dd=row.get("max_dd"),
+                        classification=row.get("classification", ""),
+                    )
+                )
+            lines.append("\n".join(rows))
+        lines.append("")
+        lines.append("### Overall Classification")
+        lines.append(
+            f"`{spec.cross_symbol_validation.get('overall_classification')}` "
+            f"(PROMOTE={spec.cross_symbol_validation.get('counts', {}).get('n_promote', 0)}, "
+            f"CONDITIONAL={spec.cross_symbol_validation.get('counts', {}).get('n_conditional', 0)}, "
+            f"REJECT={spec.cross_symbol_validation.get('counts', {}).get('n_reject', 0)})"
+        )
+        lines.append("")
+        lines.append("### Parameter Alignment Summary")
+        lines.append(_dict_markdown_table(spec.cross_symbol_validation.get("parameter_alignment_summary", {})))
     lines.append("")
     lines.append("## Promotion Status")
     lines.append(f"**Status:** `{spec.promotion_status.get('status')}`")

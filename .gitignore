@@ -25,6 +25,13 @@ outputs/*
 !outputs/strategy_promotion_summary.csv
 !outputs/strategy_promotion_overview.csv
 !outputs/strategy_parameter_alignment.csv
+!outputs/TrendBreakout_V2/
+!outputs/TrendBreakout_V2/*/
+!outputs/TrendBreakout_V2/*/strategy_research_summary.csv
+!outputs/TrendBreakout_V2/*/strategy_research_recommendation.csv
+!outputs/TrendBreakout_V2/*/strategy_research_fold_results.csv
+!outputs/TrendBreakout_V2/*/strategy_research_robustness.csv
+!outputs/TrendBreakout_V2/*/strategy_research_component_ablation.csv
 data/sample_ohlcv.csv
 data/real/
 data/dukascopy_raw/

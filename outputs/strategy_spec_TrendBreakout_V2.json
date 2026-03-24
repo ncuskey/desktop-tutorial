@@ -1,6 +1,6 @@
 {
   "name": "TrendBreakout_V2",
-  "version": "TrendBreakout_V2_R1",
+  "version": "TrendBreakout_V2_R1_FINAL",
   "symbols": [
     "EURUSD"
   ],
@@ -12,9 +12,9 @@
   },
   "metadata": {
     "strategy_name": "TrendBreakout_V2",
-    "version_id": "TrendBreakout_V2_R1",
-    "timestamp_utc": "2026-03-24T21:13:04.780578+00:00",
-    "commit_hash": "332cea7",
+    "version_id": "TrendBreakout_V2_R1_FINAL",
+    "timestamp_utc": "2026-03-24T21:47:04.577042+00:00",
+    "commit_hash": "4f46f6a",
     "source_artifacts": {
       "summary": "outputs/strategy_research_summary.csv",
       "recommendation": "outputs/strategy_research_recommendation.csv",
@@ -328,6 +328,56 @@
         "delta_robust_score": 0.0
       }
     ]
+  },
+  "cross_symbol_validation": {
+    "available": true,
+    "per_symbol": [
+      {
+        "symbol": "EURUSD",
+        "expectancy": 0.0007654015473434,
+        "sharpe": 0.973467941167683,
+        "max_dd": -0.0061061822869274,
+        "classification": "REJECT"
+      },
+      {
+        "symbol": "GBPUSD",
+        "expectancy": 0.0017007476773515,
+        "sharpe": 1.1994828050640107,
+        "max_dd": -0.0021569261154581,
+        "classification": "REJECT"
+      },
+      {
+        "symbol": "AUDUSD",
+        "expectancy": 0.0009801395875796,
+        "sharpe": 0.5409864403620183,
+        "max_dd": -0.0037450649585671,
+        "classification": "REJECT"
+      }
+    ],
+    "overall_classification": "REJECT",
+    "counts": {
+      "n_promote": 0,
+      "n_conditional": 0,
+      "n_reject": 3
+    },
+    "parameter_alignment_summary": {
+      "parameter_count": 23,
+      "mean_alignment_score": 0.7955204216073782,
+      "high_alignment_pct": 0.5217391304347826,
+      "low_alignment_params": [
+        "confirmation_bars",
+        "dynamic_cooldown_by_vol",
+        "extension_stop_multiplier",
+        "extension_trigger_atr_multiple",
+        "high_vol_cooldown_mult",
+        "min_bars_between_trades",
+        "partial_take_profit_rr",
+        "partial_take_profit_size",
+        "trailing_stop_atr_mult",
+        "velocity_lookback",
+        "winner_extension_enabled"
+      ]
+    }
   },
   "promotion_status": {
     "status": "HOLD",

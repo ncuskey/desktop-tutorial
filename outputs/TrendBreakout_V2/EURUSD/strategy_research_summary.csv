@@ -1,0 +1,2 @@
+strategy_family,symbol,timeframe,bar_count,candidate_count,search_method,use_purge,purge_bars,embargo_bars,best_peak_expectancy,best_robust_score,best_hardened_expectancy,best_hardened_sharpe,best_hardened_max_drawdown
+TrendBreakout_V2,EURUSD,H1,9904,40,random,False,0,0,0.0007876792244898824,0.748460267574955,0.0007654015473434334,0.973467941167683,-0.006106182286927497

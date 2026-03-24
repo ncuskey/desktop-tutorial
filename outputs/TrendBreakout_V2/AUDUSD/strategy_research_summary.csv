@@ -1,0 +1,2 @@
+strategy_family,symbol,timeframe,bar_count,candidate_count,search_method,use_purge,purge_bars,embargo_bars,best_peak_expectancy,best_robust_score,best_hardened_expectancy,best_hardened_sharpe,best_hardened_max_drawdown
+TrendBreakout_V2,AUDUSD,H1,9904,40,random,False,0,0,0.0009801395875796693,0.8748657664649073,0.0009801395875796693,0.5409864403620183,-0.0037450649585671902

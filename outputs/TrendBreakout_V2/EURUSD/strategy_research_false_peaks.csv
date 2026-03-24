@@ -1,0 +1,171 @@
+candidate_id,params,OOS_Expectancy,OOS_Sharpe,OOS_MaxDrawdown,OOS_TradeCount,OOS_CAGR,FoldCount,PctPositiveFolds,ExpectancyStdByFold,SharpeStdByFold,InstabilityPenalty,DrawdownPenaltyAbs,robust_score,combined_equity,combined_returns,combined_drawdown,lookback,velocity_lookback,velocity_threshold,confirmation_bars,vol_compression_max_pct,breakout_strength_atr_mult,retest_entry_mode,trailing_stop_atr_mult,max_holding_bars,vol_exit_pct_rank_threshold,partial_take_profit_rr,partial_take_profit_size,winner_extension_enabled,extension_trigger_atr_multiple,extension_stop_multiplier,extension_max_holding_bars,min_bars_between_trades,dynamic_cooldown_by_vol,high_vol_cooldown_mult,expansion_lookback,expansion_threshold,vol_contraction_exit_mult,vol_contraction_window,oos_expectancy,pre_robust_score,neighborhood_expectancy_mean,neighborhood_expectancy_std,neighborhood_base_score_mean,parameter_isolation_penalty,plateau_bonus,neighbor_count,robustness_score,robustness_rank,expectancy_rank,section
+0,"{'lookback': np.int64(18), 'velocity_lookback': np.int64(8), 'velocity_threshold': np.float64(1.2), 'confirmation_bars': np.int64(2), 'vol_compression_max_pct': np.float64(0.4), 'breakout_strength_atr_mult': np.float64(0.4), 'retest_entry_mode': np.False_, 'trailing_stop_atr_mult': np.float64(2.2), 'max_holding_bars': np.int64(48), 'vol_exit_pct_rank_threshold': np.float64(0.15), 'partial_take_profit_rr': np.float64(1.3), 'partial_take_profit_size': np.float64(0.5), 'winner_extension_enabled': np.True_, 'extension_trigger_atr_multiple': np.float64(2.5), 'extension_stop_multiplier': np.float64(3.0), 'extension_max_holding_bars': np.int64(240), 'min_bars_between_trades': np.int64(24), 'dynamic_cooldown_by_vol': np.False_, 'high_vol_cooldown_mult': np.float64(2.0), 'expansion_lookback': np.int64(12), 'expansion_threshold': np.float64(1.02), 'vol_contraction_exit_mult': np.float64(0.8), 'vol_contraction_window': np.int64(20)}",0.0007876792244898824,0.8896271441252492,-0.0049359210116942664,10.0,0.003985722965194949,15,0.2,0.0011901833345502172,2.983927287755954,0.7471720052735388,0.0049359210116942664,0.7008736797462078,"2020-04-05 16:00:00+00:00    100000.000000
+2020-04-05 17:00:00+00:00    100000.000000
+2020-04-05 18:00:00+00:00    100000.000000
+2020-04-05 19:00:00+00:00    100000.000000
+2020-04-05 20:00:00+00:00    100000.000000
+                                 ...      
+2021-02-11 23:00:00+00:00    100494.497519
+2021-02-12 00:00:00+00:00    100494.497519
+2021-02-12 01:00:00+00:00    100494.497519
+2021-02-12 02:00:00+00:00    100494.497519
+2021-02-12 03:00:00+00:00    100494.497519
+Name: returns, Length: 7500, dtype: float64","2020-04-05 16:00:00+00:00    0.0
+2020-04-05 17:00:00+00:00    0.0
+2020-04-05 18:00:00+00:00    0.0
+2020-04-05 19:00:00+00:00    0.0
+2020-04-05 20:00:00+00:00    0.0
+                            ... 
+2021-02-11 23:00:00+00:00   -0.0
+2021-02-12 00:00:00+00:00    0.0
+2021-02-12 01:00:00+00:00    0.0
+2021-02-12 02:00:00+00:00   -0.0
+2021-02-12 03:00:00+00:00   -0.0
+Name: returns, Length: 7500, dtype: float64","2020-04-05 16:00:00+00:00    0.000000
+2020-04-05 17:00:00+00:00    0.000000
+2020-04-05 18:00:00+00:00    0.000000
+2020-04-05 19:00:00+00:00    0.000000
+2020-04-05 20:00:00+00:00    0.000000
+                               ...   
+2021-02-11 23:00:00+00:00   -0.003073
+2021-02-12 00:00:00+00:00   -0.003073
+2021-02-12 01:00:00+00:00   -0.003073
+2021-02-12 02:00:00+00:00   -0.003073
+2021-02-12 03:00:00+00:00   -0.003073
+Name: returns, Length: 7500, dtype: float64",18,8,1.2,2,0.4,0.4,False,2.2,48,0.15,1.3,0.5,True,2.5,3.0,240,24,False,2.0,12,1.02,0.8,20,0.0007876792244898824,0.7008736797462078,-0.000304853354722848,0.0003797306746013244,-1.1476212539537252,10.925325792127305,-5.896513606738413,5,-8.090244745981678,39.0,1.0,false_peak
+22,"{'lookback': np.int64(30), 'velocity_lookback': np.int64(4), 'velocity_threshold': np.float64(0.8), 'confirmation_bars': np.int64(2), 'vol_compression_max_pct': np.float64(0.4), 'breakout_strength_atr_mult': np.float64(0.3), 'retest_entry_mode': np.False_, 'trailing_stop_atr_mult': np.float64(2.2), 'max_holding_bars': np.int64(72), 'vol_exit_pct_rank_threshold': np.float64(0.15), 'partial_take_profit_rr': np.float64(1.6), 'partial_take_profit_size': np.float64(0.5), 'winner_extension_enabled': np.False_, 'extension_trigger_atr_multiple': np.float64(1.8), 'extension_stop_multiplier': np.float64(2.4), 'extension_max_holding_bars': np.int64(160), 'min_bars_between_trades': np.int64(20), 'dynamic_cooldown_by_vol': np.True_, 'high_vol_cooldown_mult': np.float64(2.0), 'expansion_lookback': np.int64(12), 'expansion_threshold': np.float64(1.02), 'vol_contraction_exit_mult': np.float64(0.8), 'vol_contraction_window': np.int64(20)}",0.0007654015473434334,0.973467941167683,-0.006106182286927497,12.0,0.004894945951471996,15,0.4,0.0015966500768888827,3.0965646970478597,0.7757378243388539,0.006106182286927497,0.748460267574955,"2020-04-05 16:00:00+00:00    100000.000000
+2020-04-05 17:00:00+00:00    100000.000000
+2020-04-05 18:00:00+00:00    100000.000000
+2020-04-05 19:00:00+00:00    100000.000000
+2020-04-05 20:00:00+00:00    100000.000000
+                                 ...      
+2021-02-11 23:00:00+00:00    100607.368378
+2021-02-12 00:00:00+00:00    100607.368378
+2021-02-12 01:00:00+00:00    100607.368378
+2021-02-12 02:00:00+00:00    100607.368378
+2021-02-12 03:00:00+00:00    100607.368378
+Name: returns, Length: 7500, dtype: float64","2020-04-05 16:00:00+00:00    0.0
+2020-04-05 17:00:00+00:00    0.0
+2020-04-05 18:00:00+00:00    0.0
+2020-04-05 19:00:00+00:00    0.0
+2020-04-05 20:00:00+00:00    0.0
+                            ... 
+2021-02-11 23:00:00+00:00   -0.0
+2021-02-12 00:00:00+00:00    0.0
+2021-02-12 01:00:00+00:00    0.0
+2021-02-12 02:00:00+00:00   -0.0
+2021-02-12 03:00:00+00:00   -0.0
+Name: returns, Length: 7500, dtype: float64","2020-04-05 16:00:00+00:00    0.000000
+2020-04-05 17:00:00+00:00    0.000000
+2020-04-05 18:00:00+00:00    0.000000
+2020-04-05 19:00:00+00:00    0.000000
+2020-04-05 20:00:00+00:00    0.000000
+                               ...   
+2021-02-11 23:00:00+00:00   -0.003169
+2021-02-12 00:00:00+00:00   -0.003169
+2021-02-12 01:00:00+00:00   -0.003169
+2021-02-12 02:00:00+00:00   -0.003169
+2021-02-12 03:00:00+00:00   -0.003169
+Name: returns, Length: 7500, dtype: float64",30,4,0.8,2,0.4,0.3,False,2.2,72,0.15,1.6,0.5,False,1.8,2.4,160,20,True,2.0,12,1.02,0.8,20,0.0007654015473434334,0.748460267574955,-0.0002572065237682338,0.00040513529299108483,-1.130224360912311,10.226080711116673,-5.610579935115474,5,-7.520424790522311,38.0,2.0,false_peak
+21,"{'lookback': np.int64(30), 'velocity_lookback': np.int64(8), 'velocity_threshold': np.float64(1.4), 'confirmation_bars': np.int64(2), 'vol_compression_max_pct': np.float64(0.4), 'breakout_strength_atr_mult': np.float64(0.15), 'retest_entry_mode': np.True_, 'trailing_stop_atr_mult': np.float64(2.2), 'max_holding_bars': np.int64(48), 'vol_exit_pct_rank_threshold': np.float64(0.3), 'partial_take_profit_rr': np.float64(0.0), 'partial_take_profit_size': np.float64(0.5), 'winner_extension_enabled': np.True_, 'extension_trigger_atr_multiple': np.float64(1.8), 'extension_stop_multiplier': np.float64(2.4), 'extension_max_holding_bars': np.int64(120), 'min_bars_between_trades': np.int64(24), 'dynamic_cooldown_by_vol': np.True_, 'high_vol_cooldown_mult': np.float64(1.2), 'expansion_lookback': np.int64(12), 'expansion_threshold': np.float64(1.02), 'vol_contraction_exit_mult': np.float64(0.8), 'vol_contraction_window': np.int64(20)}",0.0003716573849789715,0.3344971172584986,-0.012616008045433058,22.0,0.002089147079216147,15,0.26666666666666666,0.0016173401847013194,4.103202446302645,1.0274179517603625,0.012616008045433058,-0.07295141112763759,"2020-04-05 16:00:00+00:00    100000.000000
+2020-04-05 17:00:00+00:00    100000.000000
+2020-04-05 18:00:00+00:00    100000.000000
+2020-04-05 19:00:00+00:00    100000.000000
+2020-04-05 20:00:00+00:00    100000.000000
+                                 ...      
+2021-02-11 23:00:00+00:00    100259.135754
+2021-02-12 00:00:00+00:00    100259.135754
+2021-02-12 01:00:00+00:00    100259.135754
+2021-02-12 02:00:00+00:00    100259.135754
+2021-02-12 03:00:00+00:00    100259.135754
+Name: returns, Length: 7500, dtype: float64","2020-04-05 16:00:00+00:00    0.0
+2020-04-05 17:00:00+00:00    0.0
+2020-04-05 18:00:00+00:00    0.0
+2020-04-05 19:00:00+00:00    0.0
+2020-04-05 20:00:00+00:00    0.0
+                            ... 
+2021-02-11 23:00:00+00:00   -0.0
+2021-02-12 00:00:00+00:00    0.0
+2021-02-12 01:00:00+00:00    0.0
+2021-02-12 02:00:00+00:00   -0.0
+2021-02-12 03:00:00+00:00   -0.0
+Name: returns, Length: 7500, dtype: float64","2020-04-05 16:00:00+00:00    0.000000
+2020-04-05 17:00:00+00:00    0.000000
+2020-04-05 18:00:00+00:00    0.000000
+2020-04-05 19:00:00+00:00    0.000000
+2020-04-05 20:00:00+00:00    0.000000
+                               ...   
+2021-02-11 23:00:00+00:00   -0.010972
+2021-02-12 00:00:00+00:00   -0.010972
+2021-02-12 01:00:00+00:00   -0.010972
+2021-02-12 02:00:00+00:00   -0.010972
+2021-02-12 03:00:00+00:00   -0.010972
+Name: returns, Length: 7500, dtype: float64",30,8,1.4,2,0.4,0.15,True,2.2,48,0.3,0.0,0.5,True,1.8,2.4,120,24,True,1.2,12,1.02,0.8,20,0.0003716573849789715,-0.07295141112763759,-0.00022753659408155635,0.00029260499382402987,-1.2419623898588577,5.9919397906052785,-4.4699033944957876,5,-5.418875832043159,33.0,5.0,false_peak
+7,"{'lookback': np.int64(30), 'velocity_lookback': np.int64(4), 'velocity_threshold': np.float64(1.0), 'confirmation_bars': np.int64(2), 'vol_compression_max_pct': np.float64(0.5), 'breakout_strength_atr_mult': np.float64(0.4), 'retest_entry_mode': np.False_, 'trailing_stop_atr_mult': np.float64(1.4), 'max_holding_bars': np.int64(96), 'vol_exit_pct_rank_threshold': np.float64(0.15), 'partial_take_profit_rr': np.float64(1.6), 'partial_take_profit_size': np.float64(0.25), 'winner_extension_enabled': np.True_, 'extension_trigger_atr_multiple': np.float64(1.8), 'extension_stop_multiplier': np.float64(2.4), 'extension_max_holding_bars': np.int64(160), 'min_bars_between_trades': np.int64(20), 'dynamic_cooldown_by_vol': np.True_, 'high_vol_cooldown_mult': np.float64(1.5), 'expansion_lookback': np.int64(12), 'expansion_threshold': np.float64(1.1), 'vol_contraction_exit_mult': np.float64(0.8), 'vol_contraction_window': np.int64(20)}",0.00026791874869903985,-0.46552815576710943,-0.006864668238360516,13.0,-0.0022223264000701404,15,0.2,0.0008396860439561333,3.0790856637293578,0.7706111019762956,0.006864668238360516,-0.31111210348194673,"2020-04-05 16:00:00+00:00    100000.000000
+2020-04-05 17:00:00+00:00    100000.000000
+2020-04-05 18:00:00+00:00    100000.000000
+2020-04-05 19:00:00+00:00    100000.000000
+2020-04-05 20:00:00+00:00    100000.000000
+                                 ...      
+2021-02-11 23:00:00+00:00     99724.487448
+2021-02-12 00:00:00+00:00     99724.487448
+2021-02-12 01:00:00+00:00     99724.487448
+2021-02-12 02:00:00+00:00     99724.487448
+2021-02-12 03:00:00+00:00     99724.487448
+Name: returns, Length: 7500, dtype: float64","2020-04-05 16:00:00+00:00    0.000000
+2020-04-05 17:00:00+00:00    0.000000
+2020-04-05 18:00:00+00:00    0.000000
+2020-04-05 19:00:00+00:00    0.000000
+2020-04-05 20:00:00+00:00    0.000000
+                               ...   
+2021-02-11 23:00:00+00:00   -0.001337
+2021-02-12 00:00:00+00:00    0.000000
+2021-02-12 01:00:00+00:00    0.000000
+2021-02-12 02:00:00+00:00   -0.000000
+2021-02-12 03:00:00+00:00   -0.000000
+Name: returns, Length: 7500, dtype: float64","2020-04-05 16:00:00+00:00    0.000000
+2020-04-05 17:00:00+00:00    0.000000
+2020-04-05 18:00:00+00:00    0.000000
+2020-04-05 19:00:00+00:00    0.000000
+2020-04-05 20:00:00+00:00    0.000000
+                               ...   
+2021-02-11 23:00:00+00:00   -0.006865
+2021-02-12 00:00:00+00:00   -0.006865
+2021-02-12 01:00:00+00:00   -0.006865
+2021-02-12 02:00:00+00:00   -0.006865
+2021-02-12 03:00:00+00:00   -0.006865
+Name: returns, Length: 7500, dtype: float64",30,4,1.0,2,0.5,0.4,False,1.4,96,0.15,1.6,0.25,True,1.8,2.4,160,20,True,1.5,12,1.1,0.8,20,0.00026791874869903985,-0.31111210348194673,-0.00021643850904083154,0.0006157026608716681,-0.9491882079167899,4.843572577398714,-6.782155046945826,5,-5.733388147539732,34.0,7.0,false_peak
+37,"{'lookback': np.int64(30), 'velocity_lookback': np.int64(8), 'velocity_threshold': np.float64(1.2), 'confirmation_bars': np.int64(1), 'vol_compression_max_pct': np.float64(0.5), 'breakout_strength_atr_mult': np.float64(0.22), 'retest_entry_mode': np.True_, 'trailing_stop_atr_mult': np.float64(1.4), 'max_holding_bars': np.int64(48), 'vol_exit_pct_rank_threshold': np.float64(0.15), 'partial_take_profit_rr': np.float64(1.6), 'partial_take_profit_size': np.float64(0.25), 'winner_extension_enabled': np.False_, 'extension_trigger_atr_multiple': np.float64(2.5), 'extension_stop_multiplier': np.float64(2.4), 'extension_max_holding_bars': np.int64(160), 'min_bars_between_trades': np.int64(30), 'dynamic_cooldown_by_vol': np.False_, 'high_vol_cooldown_mult': np.float64(1.2), 'expansion_lookback': np.int64(12), 'expansion_threshold': np.float64(1.1), 'vol_contraction_exit_mult': np.float64(0.8), 'vol_contraction_window': np.int64(20)}",0.00024499580712845334,-0.8272902517998897,-0.015839687699981453,58.0,-0.006671624283691391,15,0.7333333333333333,0.0006545775039874189,3.1734371760957782,0.794013871527932,0.015839687699981453,-0.33264347931823013,"2020-04-05 16:00:00+00:00    100000.000000
+2020-04-05 17:00:00+00:00    100000.000000
+2020-04-05 18:00:00+00:00    100000.000000
+2020-04-05 19:00:00+00:00    100000.000000
+2020-04-05 20:00:00+00:00    100000.000000
+                                 ...      
+2021-02-11 23:00:00+00:00     99173.329341
+2021-02-12 00:00:00+00:00     99173.329341
+2021-02-12 01:00:00+00:00     99173.329341
+2021-02-12 02:00:00+00:00     99173.329341
+2021-02-12 03:00:00+00:00     99173.329341
+Name: returns, Length: 7500, dtype: float64","2020-04-05 16:00:00+00:00    0.000000
+2020-04-05 17:00:00+00:00    0.000000
+2020-04-05 18:00:00+00:00    0.000000
+2020-04-05 19:00:00+00:00    0.000000
+2020-04-05 20:00:00+00:00    0.000000
+                               ...   
+2021-02-11 23:00:00+00:00   -0.001337
+2021-02-12 00:00:00+00:00    0.000000
+2021-02-12 01:00:00+00:00    0.000000
+2021-02-12 02:00:00+00:00   -0.000000
+2021-02-12 03:00:00+00:00   -0.000000
+Name: returns, Length: 7500, dtype: float64","2020-04-05 16:00:00+00:00    0.00000
+2020-04-05 17:00:00+00:00    0.00000
+2020-04-05 18:00:00+00:00    0.00000
+2020-04-05 19:00:00+00:00    0.00000
+2020-04-05 20:00:00+00:00    0.00000
+                              ...   
+2021-02-11 23:00:00+00:00   -0.01584
+2021-02-12 00:00:00+00:00   -0.01584
+2021-02-12 01:00:00+00:00   -0.01584
+2021-02-12 02:00:00+00:00   -0.01584
+2021-02-12 03:00:00+00:00   -0.01584
+Name: returns, Length: 7500, dtype: float64",30,8,1.2,1,0.5,0.22,True,1.4,48,0.15,1.6,0.25,False,2.5,2.4,160,30,False,1.2,12,1.1,0.8,20,0.00024499580712845334,-0.33264347931823013,-0.0003257431301057644,0.0004573402444525838,-1.2559313508802568,5.707389372342178,-6.687483134452023,5,-6.286085902413783,36.0,8.0,false_peak
