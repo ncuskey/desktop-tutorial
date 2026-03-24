@@ -198,7 +198,114 @@ def _prepare_symbol_frame(
     return df.dropna(subset=req).reset_index(drop=True)
 
 
-def apply_lookback_state_filter(df: pd.DataFrame, params: dict[str, Any]) -> tuple[pd.Series, pd.DataFrame]:
+def _compute_quality_features(
+    df: pd.DataFrame,
+    strategy_params: dict[str, Any] | None = None,
+) -> pd.DataFrame:
+    strategy_params = strategy_params or {}
+    close = pd.to_numeric(df.get("close"), errors="coerce")
+    high = pd.to_numeric(df.get("high"), errors="coerce")
+    low = pd.to_numeric(df.get("low"), errors="coerce")
+    atr = pd.to_numeric(df.get("atr_14"), errors="coerce")
+
+    lookback = int(strategy_params.get("lookback", 20))
+    velocity_lookback = int(strategy_params.get("velocity_lookback", 6))
+    lookback = max(2, lookback)
+    velocity_lookback = max(1, velocity_lookback)
+
+    range_high = high.rolling(lookback, min_periods=lookback).max().shift(1)
+    range_low = low.rolling(lookback, min_periods=lookback).min().shift(1)
+
+    # Existing breakout quality context expressed in ATR multiples.
+    breakout_velocity = (
+        (close - close.shift(velocity_lookback)).abs() / atr.replace(0.0, np.nan)
+    )
+    upper_strength = (close - range_high) / atr.replace(0.0, np.nan)
+    lower_strength = (range_low - close) / atr.replace(0.0, np.nan)
+    breakout_strength = pd.concat([upper_strength, lower_strength], axis=1).max(axis=1)
+    price_acceleration = close.diff().diff() / atr.replace(0.0, np.nan)
+    distance_from_range_high = (range_high - close) / atr.replace(0.0, np.nan)
+
+    return pd.DataFrame(
+        {
+            "breakout_velocity": breakout_velocity,
+            "breakout_strength_atr_mult": breakout_strength,
+            "price_acceleration": price_acceleration,
+            "distance_from_range_high": distance_from_range_high,
+        },
+        index=df.index,
+    )
+
+
+def apply_quality_filter(
+    df: pd.DataFrame,
+    params: dict[str, Any],
+    strategy_params: dict[str, Any] | None = None,
+) -> tuple[pd.Series, pd.DataFrame]:
+    quality_features = _compute_quality_features(df, strategy_params=strategy_params)
+
+    velocity_threshold = float(params.get("velocity_threshold", 1.0))
+    strength_threshold = float(params.get("strength_threshold", 0.5))
+    acceleration_threshold = float(params.get("acceleration_threshold", 0.0))
+
+    cond_velocity = quality_features["breakout_velocity"] > velocity_threshold
+    cond_strength = quality_features["breakout_strength_atr_mult"] > strength_threshold
+    cond_acceleration = quality_features["price_acceleration"] > acceleration_threshold
+
+    quality_allow = (cond_velocity | cond_strength | cond_acceleration).fillna(False).astype(bool)
+    quality_diag = quality_features.copy()
+    quality_diag["quality_allow"] = quality_allow.astype(int)
+    return quality_allow, quality_diag
+
+
+def _apply_entry_gate_to_signal(raw_signal: pd.Series, gate_mask: pd.Series) -> pd.Series:
+    """
+    Apply gate on entry/flip events only to avoid bar-to-bar gate churn.
+    Strategy exits and in-trade sizing updates are preserved.
+    """
+    raw = pd.to_numeric(raw_signal, errors="coerce").fillna(0.0).astype(float)
+    gate = gate_mask.fillna(False).astype(bool)
+    out = pd.Series(0.0, index=raw.index, dtype=float)
+    eps = 1e-12
+
+    for i in range(len(raw)):
+        raw_i = float(raw.iloc[i])
+        raw_prev = float(raw.iloc[i - 1]) if i > 0 else 0.0
+        out_prev = float(out.iloc[i - 1]) if i > 0 else 0.0
+
+        raw_prev_nonzero = abs(raw_prev) > eps
+        raw_nonzero = abs(raw_i) > eps
+        out_prev_nonzero = abs(out_prev) > eps
+
+        # Raw entry events: flat -> non-flat, or sign flip.
+        is_entry_event = (not raw_prev_nonzero and raw_nonzero) or (
+            raw_prev_nonzero and raw_nonzero and (np.sign(raw_prev) != np.sign(raw_i))
+        )
+
+        if is_entry_event:
+            out.iloc[i] = raw_i if bool(gate.iloc[i]) else 0.0
+            continue
+
+        # Preserve raw exits.
+        if not raw_nonzero:
+            out.iloc[i] = 0.0
+            continue
+
+        # If currently in a gated trade, follow raw sizing updates in same direction.
+        if out_prev_nonzero and np.sign(raw_i) == np.sign(out_prev):
+            out.iloc[i] = raw_i
+        else:
+            # Raw has a non-zero value but no new entry event; stay flat.
+            out.iloc[i] = 0.0
+
+    return out
+
+
+def apply_lookback_state_filter(
+    df: pd.DataFrame,
+    params: dict[str, Any],
+    strategy_params: dict[str, Any] | None = None,
+) -> tuple[pd.Series, pd.DataFrame]:
     """
     Lookback-sequenced regime gate:
       COMPRESSION (recent) -> EXPANSION (recent) -> EMERGING TREND (now)
@@ -238,12 +345,18 @@ def apply_lookback_state_filter(df: pd.DataFrame, params: dict[str, Any]) -> tup
         compression_window, min_periods=max(5, compression_window // 3)
     ).mean()
 
-    allow = (
+    regime_allow = (
         (adx_slope > adx_slope_threshold)
         & (atr_expansion_recent > atr_expansion_threshold)
         & (pct_recent_low_vol > compression_threshold)
     )
-    allow = allow.fillna(False).astype(bool)
+    regime_allow = regime_allow.fillna(False).astype(bool)
+    quality_allow, quality_diag = apply_quality_filter(
+        df=df,
+        params=params,
+        strategy_params=strategy_params,
+    )
+    final_allow = (regime_allow & quality_allow).fillna(False).astype(bool)
 
     diagnostics = pd.DataFrame(
         {
@@ -251,11 +364,17 @@ def apply_lookback_state_filter(df: pd.DataFrame, params: dict[str, Any]) -> tup
             "atr_ratio": atr_ratio,
             "atr_expansion_recent": atr_expansion_recent,
             "pct_recent_low_vol": pct_recent_low_vol,
-            "state_allow": allow.astype(int),
+            "breakout_velocity": quality_diag["breakout_velocity"],
+            "breakout_strength_atr_mult": quality_diag["breakout_strength_atr_mult"],
+            "price_acceleration": quality_diag["price_acceleration"],
+            "distance_from_range_high": quality_diag["distance_from_range_high"],
+            "regime_allow": regime_allow.astype(int),
+            "quality_allow": quality_allow.astype(int),
+            "state_allow": final_allow.astype(int),
         },
         index=df.index,
     )
-    return allow, diagnostics
+    return final_allow, diagnostics
 
 
 def _annualized_sharpe(returns: pd.Series, timeframe: str) -> float:
@@ -395,8 +514,12 @@ def run_regime_gated_evaluation(
                 continue
 
             raw_signal = trend_breakout_v2_signals(test_df, hardened_params).astype(float)
-            gate_mask, state_diag = apply_lookback_state_filter(test_df, gating_params)
-            gated_signal = raw_signal.where(gate_mask, 0.0)
+            gate_mask, state_diag = apply_lookback_state_filter(
+                test_df,
+                gating_params,
+                strategy_params=hardened_params,
+            )
+            gated_signal = _apply_entry_gate_to_signal(raw_signal, gate_mask)
 
             entries_total = float(((raw_signal != 0) & (raw_signal.shift(1).fillna(0) == 0)).sum())
             entries_allowed = float(
@@ -428,6 +551,15 @@ def run_regime_gated_evaluation(
                     ),
                     "pct_recent_low_vol_mean": _safe_float(
                         state_diag["pct_recent_low_vol"].mean(), default=np.nan
+                    ),
+                    "pct_passing_quality_filter": _safe_float(
+                        state_diag["quality_allow"].mean(), default=np.nan
+                    ),
+                    "pct_passing_regime_filter": _safe_float(
+                        state_diag["regime_allow"].mean(), default=np.nan
+                    ),
+                    "pct_passing_both": _safe_float(
+                        state_diag["state_allow"].mean(), default=np.nan
                     ),
                 }
             )

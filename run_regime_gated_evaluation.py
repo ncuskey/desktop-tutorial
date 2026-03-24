@@ -30,6 +30,9 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--atr-expansion-window", type=int, default=20)
     parser.add_argument("--compression-window", type=int, default=20)
     parser.add_argument("--low-vol-percentile", type=float, default=0.3)
+    parser.add_argument("--velocity-threshold", type=float, default=1.0)
+    parser.add_argument("--strength-threshold", type=float, default=0.5)
+    parser.add_argument("--acceleration-threshold", type=float, default=0.0)
     return parser
 
 
@@ -55,6 +58,9 @@ def main() -> None:
             "atr_expansion_window": args.atr_expansion_window,
             "compression_window": args.compression_window,
             "low_vol_percentile": args.low_vol_percentile,
+            "velocity_threshold": args.velocity_threshold,
+            "strength_threshold": args.strength_threshold,
+            "acceleration_threshold": args.acceleration_threshold,
         },
     )
 
