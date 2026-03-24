@@ -20,6 +20,8 @@ outputs/*
 !outputs/strategy_research_equity.png
 !outputs/strategy_research_heatmaps.png
 !outputs/strategy_research_recommendation.csv
+!outputs/strategy_spec_*.md
+!outputs/strategy_spec_*.json
 data/sample_ohlcv.csv
 data/real/
 data/dukascopy_raw/
