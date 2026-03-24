@@ -30,6 +30,9 @@ outputs/*
 !outputs/regime_bin_summary.csv
 !outputs/regime_vs_sharpe.png
 !outputs/regime_bin_performance.png
+!outputs/regime_gated_comparison.csv
+!outputs/regime_gated_fold_results.csv
+!outputs/regime_gated_equity.png
 !outputs/TrendBreakout_V2/
 !outputs/TrendBreakout_V2/*/
 !outputs/TrendBreakout_V2/*/strategy_research_summary.csv

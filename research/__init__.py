@@ -23,6 +23,7 @@ from .v23_runner import run_v23_edge_amplification, summarize_tail_metrics
 from .walk_forward import WalkForwardResult, run_walk_forward
 from .strategy_runner import run_strategy_research
 from .regime_diagnostics import run_regime_diagnostics
+from .regime_gated_runner import run_regime_gated_evaluation
 from .promotion_framework import (
     PromotionArtifacts,
     PromotionThresholds,
@@ -68,6 +69,7 @@ __all__ = [
     "summarize_tail_metrics",
     "run_strategy_research",
     "run_regime_diagnostics",
+    "run_regime_gated_evaluation",
     "PromotionThresholds",
     "SymbolPromotionResult",
     "PromotionArtifacts",
