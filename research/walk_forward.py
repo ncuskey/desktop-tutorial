@@ -20,10 +20,12 @@ class WalkForwardResult:
     combined_equity: pd.Series
     combined_drawdown: pd.Series
     aggregate_metrics: dict[str, float]
+    combined_trades: pd.DataFrame | None = None
     filtered_combined_returns: pd.Series | None = None
     filtered_combined_equity: pd.Series | None = None
     filtered_combined_drawdown: pd.Series | None = None
     filtered_aggregate_metrics: dict[str, float] | None = None
+    filtered_combined_trades: pd.DataFrame | None = None
     meta_filter_diagnostics: dict[str, float] | None = None
 
 
@@ -376,6 +378,7 @@ def run_walk_forward(
     filtered_combined_equity = None
     filtered_combined_drawdown = None
     filtered_aggregate_metrics = None
+    filtered_combined_trades = None
     meta_filter_diagnostics = None
 
     if use_meta and filtered_stitched_returns:
@@ -398,6 +401,7 @@ def run_walk_forward(
             if filtered_aggregated_trades
             else pd.DataFrame()
         )
+        filtered_combined_trades = filtered_trades
         filtered_aggregate_metrics = compute_metrics(
             filtered_combined_returns,
             filtered_combined_equity,
@@ -441,9 +445,11 @@ def run_walk_forward(
         combined_equity=combined_equity,
         combined_drawdown=combined_drawdown,
         aggregate_metrics=aggregate_metrics,
+        combined_trades=combined_trades,
         filtered_combined_returns=filtered_combined_returns,
         filtered_combined_equity=filtered_combined_equity,
         filtered_combined_drawdown=filtered_combined_drawdown,
         filtered_aggregate_metrics=filtered_aggregate_metrics,
+        filtered_combined_trades=filtered_combined_trades,
         meta_filter_diagnostics=meta_filter_diagnostics,
     )

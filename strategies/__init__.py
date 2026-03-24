@@ -10,7 +10,7 @@ from .carry import carry_proxy_signals
 from .filters import apply_filter
 from .mean_reversion_confirmed import mean_reversion_confirmed_signals
 from .mean_reversion import bollinger_fade_signals, rsi_reversal_signals
-from .trend_breakout import trend_breakout_signals
+from .trend_breakout import trend_breakout_signals, trend_breakout_v2_signals
 from .trend import donchian_breakout_signals, ma_crossover_signals
 
 __all__ = [
@@ -24,4 +24,5 @@ __all__ = [
     "carry_proxy_signals",
     "trend_breakout_signals",
     "mean_reversion_confirmed_signals",
+    "trend_breakout_v2_signals",
 ]
