@@ -33,6 +33,7 @@ outputs/*
 !outputs/regime_gated_comparison.csv
 !outputs/regime_gated_fold_results.csv
 !outputs/regime_gated_equity.png
+!outputs/state_filter_diagnostics.csv
 !outputs/TrendBreakout_V2/
 !outputs/TrendBreakout_V2/*/
 !outputs/TrendBreakout_V2/*/strategy_research_summary.csv

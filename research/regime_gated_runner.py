@@ -24,6 +24,7 @@ TIMEFRAME_TO_PERIODS = {"H1": 24 * 252, "H4": 6 * 252, "D1": 252}
 class RegimeGatedArtifacts:
     comparison: pd.DataFrame
     fold_results: pd.DataFrame
+    state_filter_diagnostics: pd.DataFrame
     equity_plot_path: Path
 
 
@@ -197,42 +198,57 @@ def _prepare_symbol_frame(
     return df.dropna(subset=req).reset_index(drop=True)
 
 
-def apply_regime_filter(df: pd.DataFrame, params: dict[str, Any]) -> pd.Series:
+def apply_state_based_filter(df: pd.DataFrame, params: dict[str, Any]) -> tuple[pd.Series, pd.DataFrame]:
     """
-    Bar-level no-lookahead regime gate.
+    State-based regime gate:
+      COMPRESSION -> EXPANSION -> EMERGING TREND
 
-    ALLOW when:
-      - rolling avg ADX > threshold_adx OR
-      - rolling pct(ADX > adx_gt_level) > threshold_pct
-    and optionally:
-      - trend_variance_ratio > threshold (constant or expanding median split).
+    Allow only when:
+      - adx_slope > adx_slope_threshold
+      - atr_ratio > atr_expansion_threshold
+      - pct_recent_low_vol > compression_threshold
+
+    All rolling/shifted features are computed from information up to current bar.
     """
     adx = pd.to_numeric(df.get("adx_14"), errors="coerce")
-    tvr = pd.to_numeric(df.get("trend_variance_ratio"), errors="coerce")
+    atr_norm = pd.to_numeric(df.get("atr_norm"), errors="coerce")
+    atr_pct_rank = pd.to_numeric(df.get("atr_norm_pct_rank"), errors="coerce")
 
-    adx_window = int(params.get("regime_adx_window", 48))
-    adx_gt_level = float(params.get("regime_adx_gt_level", 25.0))
-    threshold_adx = float(params.get("regime_threshold_adx", 25.0))
-    threshold_pct = float(params.get("regime_threshold_pct", 0.30))
-    use_tvr = bool(params.get("regime_use_trend_variance_filter", True))
-    tvr_min_periods = int(params.get("regime_tvr_min_periods", 80))
-    tvr_threshold_param = params.get("regime_trend_variance_threshold")
+    adx_slope_window = int(params.get("adx_slope_window", 5))
+    atr_expansion_window = int(params.get("atr_expansion_window", 20))
+    compression_window = int(params.get("compression_window", 20))
 
-    rolling_avg_adx = adx.rolling(adx_window, min_periods=max(10, adx_window // 3)).mean()
-    rolling_pct_adx_gt = (adx > adx_gt_level).astype(float).rolling(
-        adx_window, min_periods=max(10, adx_window // 3)
+    adx_slope_threshold = float(params.get("adx_slope_threshold", 0.0))
+    atr_expansion_threshold = float(params.get("atr_expansion_threshold", 1.05))
+    compression_threshold = float(params.get("compression_threshold", 0.2))
+    low_vol_percentile = float(params.get("low_vol_percentile", 0.3))
+
+    adx_slope = adx - adx.shift(adx_slope_window)
+    atr_roll_mean = atr_norm.rolling(
+        atr_expansion_window, min_periods=max(5, atr_expansion_window // 3)
+    ).mean()
+    atr_ratio = atr_norm / atr_roll_mean.replace(0.0, np.nan)
+    pct_recent_low_vol = (atr_pct_rank < low_vol_percentile).astype(float).rolling(
+        compression_window, min_periods=max(5, compression_window // 3)
     ).mean()
 
-    allow = (rolling_avg_adx > threshold_adx) | (rolling_pct_adx_gt > threshold_pct)
-    if use_tvr:
-        if tvr_threshold_param is None:
-            # Median split with expanding history only (shifted => no lookahead).
-            tvr_threshold = tvr.expanding(min_periods=tvr_min_periods).median().shift(1)
-        else:
-            tvr_threshold = pd.Series(float(tvr_threshold_param), index=df.index, dtype=float)
-        allow = allow & (tvr > tvr_threshold)
+    allow = (
+        (adx_slope > adx_slope_threshold)
+        & (atr_ratio > atr_expansion_threshold)
+        & (pct_recent_low_vol > compression_threshold)
+    )
+    allow = allow.fillna(False).astype(bool)
 
-    return allow.fillna(False).astype(bool)
+    diagnostics = pd.DataFrame(
+        {
+            "adx_slope": adx_slope,
+            "atr_ratio": atr_ratio,
+            "pct_recent_low_vol": pct_recent_low_vol,
+            "state_allow": allow.astype(int),
+        },
+        index=df.index,
+    )
+    return allow, diagnostics
 
 
 def _annualized_sharpe(returns: pd.Series, timeframe: str) -> float:
@@ -345,6 +361,7 @@ def run_regime_gated_evaluation(
 
     all_fold_rows: list[dict[str, Any]] = []
     comparison_rows: list[dict[str, Any]] = []
+    state_diag_rows: list[dict[str, Any]] = []
     symbol_equity: dict[str, dict[str, pd.Series]] = {}
 
     for symbol in symbols:
@@ -371,8 +388,39 @@ def run_regime_gated_evaluation(
                 continue
 
             raw_signal = trend_breakout_v2_signals(test_df, hardened_params).astype(float)
-            gate_mask = apply_regime_filter(test_df, gating_params)
+            gate_mask, state_diag = apply_state_based_filter(test_df, gating_params)
             gated_signal = raw_signal.where(gate_mask, 0.0)
+
+            entries_total = float(((raw_signal != 0) & (raw_signal.shift(1).fillna(0) == 0)).sum())
+            entries_allowed = float(
+                (
+                    (raw_signal != 0)
+                    & (raw_signal.shift(1).fillna(0) == 0)
+                    & gate_mask
+                ).sum()
+            )
+            entries_filtered = max(entries_total - entries_allowed, 0.0)
+            allowed_trade_pct = (entries_allowed / entries_total) if entries_total > 0 else 0.0
+            filtered_trade_pct = (entries_filtered / entries_total) if entries_total > 0 else 0.0
+            state_diag_rows.append(
+                {
+                    "symbol": symbol,
+                    "fold_id": fold_id,
+                    "fold_test_start": test_start,
+                    "fold_test_end": test_end,
+                    "entries_total": entries_total,
+                    "entries_allowed": entries_allowed,
+                    "entries_filtered": entries_filtered,
+                    "allowed_trade_pct": allowed_trade_pct,
+                    "filtered_trade_pct": filtered_trade_pct,
+                    "allowed_bar_pct": float(gate_mask.mean()),
+                    "mean_adx_slope": _safe_float(state_diag["adx_slope"].mean(), default=np.nan),
+                    "mean_atr_ratio": _safe_float(state_diag["atr_ratio"].mean(), default=np.nan),
+                    "mean_pct_recent_low_vol": _safe_float(
+                        state_diag["pct_recent_low_vol"].mean(), default=np.nan
+                    ),
+                }
+            )
 
             variant_signals = {"unfiltered": raw_signal, "gated": gated_signal}
             for variant, signal in variant_signals.items():
@@ -463,24 +511,30 @@ def run_regime_gated_evaluation(
     comparison = pd.DataFrame(comparison_rows).sort_values(
         ["symbol", "variant"]
     ).reset_index(drop=True)
+    state_filter_diagnostics = pd.DataFrame(state_diag_rows).sort_values(
+        ["symbol", "fold_id"]
+    ).reset_index(drop=True)
 
     comparison_csv = out_dir / "regime_gated_comparison.csv"
     fold_csv = out_dir / "regime_gated_fold_results.csv"
+    state_diag_csv = out_dir / "state_filter_diagnostics.csv"
     plot_path = out_dir / "regime_gated_equity.png"
     comparison.to_csv(comparison_csv, index=False)
     fold_results.to_csv(fold_csv, index=False)
+    state_filter_diagnostics.to_csv(state_diag_csv, index=False)
     _plot_regime_gated_equity(symbol_equity, plot_path)
 
     return RegimeGatedArtifacts(
         comparison=comparison,
         fold_results=fold_results,
+        state_filter_diagnostics=state_filter_diagnostics,
         equity_plot_path=plot_path,
     )
 
 
 __all__ = [
     "RegimeGatedArtifacts",
-    "apply_regime_filter",
+    "apply_state_based_filter",
     "run_regime_gated_evaluation",
 ]
 

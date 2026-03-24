@@ -16,10 +16,13 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--use-hardened-default", action="store_true")
     parser.add_argument("--source-csv", default=None)
 
-    parser.add_argument("--threshold-adx", type=float, default=25.0)
-    parser.add_argument("--threshold-pct", type=float, default=0.3)
-    parser.add_argument("--use-trend-variance", action="store_true")
-    parser.add_argument("--trend-variance-threshold", type=float, default=None)
+    parser.add_argument("--adx-slope-window", type=int, default=5)
+    parser.add_argument("--adx-slope-threshold", type=float, default=0.0)
+    parser.add_argument("--atr-expansion-threshold", type=float, default=1.05)
+    parser.add_argument("--compression-threshold", type=float, default=0.2)
+    parser.add_argument("--atr-expansion-window", type=int, default=20)
+    parser.add_argument("--compression-window", type=int, default=20)
+    parser.add_argument("--low-vol-percentile", type=float, default=0.3)
     return parser
 
 
@@ -37,10 +40,13 @@ def main() -> None:
         use_hardened_default=args.use_hardened_default,
         source_csv=args.source_csv,
         gating_params={
-            "threshold_adx": args.threshold_adx,
-            "threshold_pct": args.threshold_pct,
-            "use_trend_variance": args.use_trend_variance,
-            "trend_variance_threshold": args.trend_variance_threshold,
+            "adx_slope_window": args.adx_slope_window,
+            "adx_slope_threshold": args.adx_slope_threshold,
+            "atr_expansion_threshold": args.atr_expansion_threshold,
+            "compression_threshold": args.compression_threshold,
+            "atr_expansion_window": args.atr_expansion_window,
+            "compression_window": args.compression_window,
+            "low_vol_percentile": args.low_vol_percentile,
         },
     )
 
@@ -51,7 +57,8 @@ def main() -> None:
         "Outputs: "
         f"{args.output_dir}/regime_gated_comparison.csv, "
         f"{args.output_dir}/regime_gated_fold_results.csv, "
-        f"{args.output_dir}/regime_gated_equity.png"
+        f"{args.output_dir}/regime_gated_equity.png, "
+        f"{args.output_dir}/state_filter_diagnostics.csv"
     )
 
 
