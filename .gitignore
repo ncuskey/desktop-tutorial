@@ -22,6 +22,9 @@ outputs/*
 !outputs/strategy_research_recommendation.csv
 !outputs/strategy_spec_*.md
 !outputs/strategy_spec_*.json
+!outputs/strategy_promotion_summary.csv
+!outputs/strategy_promotion_overview.csv
+!outputs/strategy_parameter_alignment.csv
 data/sample_ohlcv.csv
 data/real/
 data/dukascopy_raw/

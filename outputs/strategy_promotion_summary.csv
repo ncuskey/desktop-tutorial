@@ -1,0 +1,4 @@
+strategy_name,symbol,expectancy,sharpe,max_dd,trade_count,positive_fold_pct,robustness_gap,classification
+TrendBreakout_V2,EURUSD,,,,0.0,0.0,,REJECT
+TrendBreakout_V2,GBPUSD,,,,0.0,0.0,,REJECT
+TrendBreakout_V2,AUDUSD,,,,0.0,0.0,,REJECT
