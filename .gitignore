@@ -5,6 +5,12 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 outputs/
+!outputs/
+outputs/*
+!outputs/.gitkeep
+!outputs/v22_candidate_summary.csv
+!outputs/v22_trade_distribution.csv
+!outputs/v22_candidate_equity.png
 data/sample_ohlcv.csv
 data/real/
 data/dukascopy_raw/
