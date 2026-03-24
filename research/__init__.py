@@ -8,6 +8,7 @@ from .switch_diagnostics import (
     compute_switches_per_1000_bars,
 )
 from .tracking import ExperimentTracker
+from .v22_runner import V22RunArtifacts, run_v22_candidate_hardening
 from .walk_forward import WalkForwardResult, run_walk_forward
 
 __all__ = [
@@ -20,4 +21,6 @@ __all__ = [
     "ExperimentTracker",
     "WalkForwardResult",
     "run_walk_forward",
+    "V22RunArtifacts",
+    "run_v22_candidate_hardening",
 ]
