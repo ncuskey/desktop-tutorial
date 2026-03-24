@@ -6,6 +6,7 @@ from .feature_pruning import build_feature_pruning_tables
 from .monte_carlo import block_bootstrap_oos_returns
 from .multi_symbol_runner import run_multi_symbol_evaluation
 from .parameter_sweep import grid_parameter_sweep, random_parameter_sweep
+from .parameter_robustness import RobustnessArtifacts, analyze_parameter_robustness
 from .purged_walk_forward import PurgedWalkForwardResult, run_purged_walk_forward
 from .sleeve_ranking import build_sleeve_symbol_ranking, classify_component_decisions
 from .stability import feature_stability_report, threshold_stability_report
@@ -20,6 +21,7 @@ from .v21_runner import run_v21_refinement
 from .v22_runner import V22RunArtifacts, run_v22_candidate_hardening
 from .v23_runner import run_v23_edge_amplification, summarize_tail_metrics
 from .walk_forward import WalkForwardResult, run_walk_forward
+from .strategy_runner import run_strategy_research
 
 __all__ = [
     "bootstrap_returns",
@@ -27,6 +29,8 @@ __all__ = [
     "run_multi_symbol_evaluation",
     "grid_parameter_sweep",
     "random_parameter_sweep",
+    "RobustnessArtifacts",
+    "analyze_parameter_robustness",
     "run_purged_walk_forward",
     "PurgedWalkForwardResult",
     "threshold_stability_report",
@@ -48,4 +52,5 @@ __all__ = [
     "run_v22_candidate_hardening",
     "run_v23_edge_amplification",
     "summarize_tail_metrics",
+    "run_strategy_research",
 ]

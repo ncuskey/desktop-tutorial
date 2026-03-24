@@ -12,6 +12,14 @@ outputs/*
 !outputs/v22_trade_distribution.csv
 !outputs/v22_candidate_equity.png
 !outputs/v23_tail_metrics.csv
+!outputs/strategy_research_summary.csv
+!outputs/strategy_research_top_params.csv
+!outputs/strategy_research_fold_results.csv
+!outputs/strategy_research_robustness.csv
+!outputs/strategy_research_component_ablation.csv
+!outputs/strategy_research_equity.png
+!outputs/strategy_research_heatmaps.png
+!outputs/strategy_research_recommendation.csv
 data/sample_ohlcv.csv
 data/real/
 data/dukascopy_raw/

@@ -136,29 +136,44 @@ def trend_breakout_v2_signals(df: pd.DataFrame, params: dict) -> pd.Series:
     """
     Hardened trend breakout sleeve for V2.3 edge amplification.
     """
-    lookback = int(params.get("lookback", 20))
+    lookback = int(params.get("breakout_lookback", params.get("lookback", 20)))
     atr_col = str(params.get("atr_col", "atr_14"))
     atr_norm_col = str(params.get("atr_norm_col", "atr_norm"))
     vol_rank_col = str(params.get("atr_pct_rank_col", "atr_norm_pct_rank"))
 
-    vol_compression_max_pct = float(params.get("vol_compression_max_pct", 0.40))
-    breakout_strength_atr_mult = float(params.get("breakout_strength_atr_mult", 0.25))
+    vol_compression_max_pct = float(
+        params.get(
+            "compression_pct_rank_threshold",
+            params.get("vol_compression_max_pct", 0.40),
+        )
+    )
+    breakout_strength_atr_mult = float(
+        params.get(
+            "breakout_strength_atr_multiple",
+            params.get("breakout_strength_atr_mult", 0.25),
+        )
+    )
     velocity_lookback = int(params.get("velocity_lookback", 6))
     velocity_threshold = float(params.get("velocity_threshold", 1.0))
     confirmation_bars = int(params.get("confirmation_bars", 2))
     expansion_lookback = int(params.get("expansion_lookback", 12))
     expansion_threshold = float(params.get("expansion_threshold", 1.10))
 
-    retest_entry_mode = bool(params.get("retest_entry_mode", False))
+    retest_entry_mode = bool(
+        params.get("retest_entry_enabled", params.get("retest_entry_mode", False))
+    )
     retest_expiry_bars = int(params.get("retest_expiry_bars", 10))
     retest_tolerance_atr_mult = float(params.get("retest_tolerance_atr_mult", 0.15))
     retest_confirm_buffer_atr_mult = float(params.get("retest_confirm_buffer_atr_mult", 0.05))
 
-    trailing_stop_atr_mult = float(params.get("trailing_stop_atr_mult", 1.8))
-    max_holding_bars = int(params.get("max_holding_bars", 72))
+    trailing_stop_atr_mult = float(
+        params.get("atr_stop_multiplier", params.get("trailing_stop_atr_mult", 1.8))
+    )
+    max_holding_bars = int(params.get("time_exit_bars", params.get("max_holding_bars", 72)))
     vol_contraction_exit_mult = float(params.get("vol_contraction_exit_mult", 0.80))
     vol_contraction_window = int(params.get("vol_contraction_window", 20))
     vol_exit_pct_rank_threshold = float(params.get("vol_exit_pct_rank_threshold", 0.25))
+    contraction_exit_enabled = bool(params.get("contraction_exit_enabled", True))
 
     winner_extension_enabled = bool(params.get("winner_extension_enabled", True))
     extension_trigger_atr_multiple = float(params.get("extension_trigger_atr_multiple", 2.0))
@@ -167,7 +182,15 @@ def trend_breakout_v2_signals(df: pd.DataFrame, params: dict) -> pd.Series:
         params.get("extension_max_holding_bars", max_holding_bars * 3)
     )
 
-    partial_take_profit_rr = float(params.get("partial_take_profit_rr", 1.2))
+    partial_take_profit_enabled = bool(params.get("partial_take_profit_enabled", True))
+    partial_take_profit_rr = float(
+        params.get(
+            "partial_take_profit_atr_multiple",
+            params.get("partial_take_profit_rr", 1.2),
+        )
+    )
+    if not partial_take_profit_enabled:
+        partial_take_profit_rr = 0.0
     partial_take_profit_size = float(params.get("partial_take_profit_size", 0.4))
     partial_take_profit_size = float(np.clip(partial_take_profit_size, 0.1, 0.9))
 
@@ -343,11 +366,12 @@ def trend_breakout_v2_signals(df: pd.DataFrame, params: dict) -> pd.Series:
             if extended_mode and bars_in_trade >= extension_max_holding_bars:
                 exit_now = True
 
-            if np.isfinite(atrn_i) and np.isfinite(atrn_ma_i):
-                if atrn_i <= (vol_contraction_exit_mult * atrn_ma_i):
+            if contraction_exit_enabled:
+                if np.isfinite(atrn_i) and np.isfinite(atrn_ma_i):
+                    if atrn_i <= (vol_contraction_exit_mult * atrn_ma_i):
+                        exit_now = True
+                if np.isfinite(atr_rank_i) and atr_rank_i <= vol_exit_pct_rank_threshold:
                     exit_now = True
-            if np.isfinite(atr_rank_i) and atr_rank_i <= vol_exit_pct_rank_threshold:
-                exit_now = True
 
             if (
                 partial_take_profit_rr > 0
