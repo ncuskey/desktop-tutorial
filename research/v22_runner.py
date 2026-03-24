@@ -33,6 +33,7 @@ DEFAULT_TIMEFRAME = "H1"
 class V22RunArtifacts:
     summary: pd.DataFrame
     trade_distribution: pd.DataFrame
+    tail_metrics: pd.DataFrame
     output_dir: Path
 
 
@@ -84,22 +85,34 @@ def _prepare_symbol_frame(raw: pd.DataFrame, symbol: str, timeframe: str) -> pd.
 
 
 def _trend_breakout_v22_grid() -> dict[str, list]:
-    # Keep the grid compact to maintain strict WF runtime.
+    # V2.3: compact grid for asymmetry-focused tuning.
     return {
         "lookback": [20],
         "vol_compression_max_pct": [0.40],
-        "breakout_strength_atr_mult": [0.20, 0.35],
-        "retest_entry_mode": [False, True],
+        "breakout_strength_atr_mult": [0.22],
+        "velocity_lookback": [6],
+        "velocity_threshold": [0.9],
+        "confirmation_bars": [1],
+        "expansion_lookback": [12],
+        "expansion_threshold": [1.02],
+        "retest_entry_mode": [False],
         "retest_expiry_bars": [8],
         "retest_tolerance_atr_mult": [0.15],
         "retest_confirm_buffer_atr_mult": [0.05],
         "trailing_stop_atr_mult": [1.8],
-        "max_holding_bars": [72],
+        "max_holding_bars": [64],
         "vol_contraction_exit_mult": [0.80],
         "vol_contraction_window": [20],
-        "partial_take_profit_rr": [0.0, 1.0],
-        "partial_take_profit_size": [0.5],
-        "min_bars_between_trades": [6, 12],
+        "vol_exit_pct_rank_threshold": [0.22],
+        "winner_extension_enabled": [True],
+        "extension_trigger_atr_multiple": [2.0],
+        "extension_stop_multiplier": [2.4],
+        "extension_max_holding_bars": [160],
+        "partial_take_profit_rr": [1.2],
+        "partial_take_profit_size": [0.35],
+        "min_bars_between_trades": [22],
+        "dynamic_cooldown_by_vol": [True],
+        "high_vol_cooldown_mult": [1.5],
     }
 
 
@@ -118,9 +131,19 @@ def _trade_distribution_rows(
             "median_trade_return": 0.0,
             "p10_trade_return": 0.0,
             "p90_trade_return": 0.0,
+            "avg_win": 0.0,
+            "avg_loss": 0.0,
+            "payoff_ratio": 0.0,
+            "largest_win": 0.0,
+            "largest_loss": 0.0,
             "avg_holding_bars": 0.0,
         }
     tr = trades["trade_return"].astype(float)
+    wins = tr[tr > 0]
+    losses = tr[tr < 0]
+    avg_win = float(wins.mean()) if not wins.empty else 0.0
+    avg_loss = float(losses.mean()) if not losses.empty else 0.0
+    payoff_ratio = float(avg_win / abs(avg_loss)) if avg_loss < 0 else 0.0
     return {
         "symbol": symbol,
         "variant": variant,
@@ -130,15 +153,75 @@ def _trade_distribution_rows(
         "median_trade_return": float(tr.median()),
         "p10_trade_return": float(tr.quantile(0.10)),
         "p90_trade_return": float(tr.quantile(0.90)),
+        "avg_win": avg_win,
+        "avg_loss": avg_loss,
+        "payoff_ratio": payoff_ratio,
+        "largest_win": float(tr.max()) if not tr.empty else 0.0,
+        "largest_loss": float(tr.min()) if not tr.empty else 0.0,
         "avg_holding_bars": float(trades["holding_bars"].mean())
         if "holding_bars" in trades.columns
         else 0.0,
     }
 
 
+def _tail_metrics_rows(
+    symbol: str,
+    variant: str,
+    trades: pd.DataFrame | None,
+) -> dict[str, float | str]:
+    if trades is None or trades.empty or "trade_return" not in trades.columns:
+        return {
+            "symbol": symbol,
+            "variant": variant,
+            "trade_count": 0.0,
+            "p90_trade_return": 0.0,
+            "p95_trade_return": 0.0,
+            "p99_trade_return": 0.0,
+            "right_tail_ratio": 0.0,
+            "pct_trades_contributing_50pct_pnl": 0.0,
+        }
+    tr = trades["trade_return"].astype(float).dropna()
+    if tr.empty:
+        return {
+            "symbol": symbol,
+            "variant": variant,
+            "trade_count": 0.0,
+            "p90_trade_return": 0.0,
+            "p95_trade_return": 0.0,
+            "p99_trade_return": 0.0,
+            "right_tail_ratio": 0.0,
+            "pct_trades_contributing_50pct_pnl": 0.0,
+        }
+
+    p10 = float(tr.quantile(0.10))
+    p90 = float(tr.quantile(0.90))
+    right_tail_ratio = float(p90 / abs(p10)) if abs(p10) > 1e-12 else 0.0
+
+    positive = tr[tr > 0].sort_values(ascending=False)
+    total_pos = float(positive.sum())
+    if total_pos > 1e-12 and len(positive) > 0:
+        csum = positive.cumsum()
+        min_n = int((csum < (0.5 * total_pos)).sum()) + 1
+        pct_50 = float(min_n / len(tr))
+    else:
+        pct_50 = 0.0
+
+    return {
+        "symbol": symbol,
+        "variant": variant,
+        "trade_count": float(len(tr)),
+        "p90_trade_return": p90,
+        "p95_trade_return": float(tr.quantile(0.95)),
+        "p99_trade_return": float(tr.quantile(0.99)),
+        "right_tail_ratio": right_tail_ratio,
+        "pct_trades_contributing_50pct_pnl": pct_50,
+    }
+
+
 def _plot_candidate_equity(
     result_by_symbol: dict[str, WalkForwardResult],
     output_path: Path,
+    run_label: str = "V2.2",
 ) -> None:
     n = len(result_by_symbol)
     fig, axes = plt.subplots(n, 1, figsize=(13, 4.2 * n), sharex=False)
@@ -159,7 +242,7 @@ def _plot_candidate_equity(
                 label=f"{symbol} Meta-Filtered",
                 alpha=0.9,
             )
-        ax.set_title(f"{symbol} - V2.2 OOS Equity")
+        ax.set_title(f"{symbol} - {run_label} OOS Equity")
         ax.set_ylabel("Equity")
         ax.legend(loc="best")
         ax.grid(alpha=0.2)
@@ -184,6 +267,7 @@ def run_v22_candidate_hardening(
 
     summary_rows: list[dict] = []
     trade_rows: list[dict] = []
+    tail_rows: list[dict] = []
     results_by_symbol: dict[str, WalkForwardResult] = {}
 
     param_grid = _trend_breakout_v22_grid()
@@ -201,12 +285,20 @@ def run_v22_candidate_hardening(
             timeframe=timeframe,
             regime_column="stable_regime_label",
             meta_filter_class=RuleBasedMetaFilter,
-            meta_filter_kwargs={"target_filter_rate": 0.4},
+            meta_filter_kwargs={
+                "target_filter_rate": 0.30,
+                "min_filter_rate": 0.20,
+                "max_filter_rate": 0.50,
+            },
             meta_feature_builder=build_trade_meta_features,
             meta_label_builder=create_trade_success_labels,
-            meta_label_kwargs={"horizon_bars": 24, "success_threshold": 0.0001},
+            meta_label_kwargs={
+                "forward_horizon": 24,
+                "method": "top_quantile",
+                "quantile": 0.25,
+            },
             meta_apply_fn=apply_meta_trade_filter,
-            meta_min_train_samples=20,
+            meta_min_train_samples=8,
         )
         results_by_symbol[symbol] = wf
 
@@ -247,18 +339,25 @@ def run_v22_candidate_hardening(
         trade_rows.append(
             _trade_distribution_rows(symbol, "meta_filtered", wf.filtered_combined_trades)
         )
+        tail_rows.append(_tail_metrics_rows(symbol, "unfiltered", wf.combined_trades))
+        tail_rows.append(_tail_metrics_rows(symbol, "meta_filtered", wf.filtered_combined_trades))
 
     summary = pd.DataFrame(summary_rows).sort_values("symbol").reset_index(drop=True)
     trade_distribution = pd.DataFrame(trade_rows).sort_values(["symbol", "variant"]).reset_index(
         drop=True
     )
+    tail_metrics = pd.DataFrame(tail_rows).sort_values(["symbol", "variant"]).reset_index(
+        drop=True
+    )
 
     summary.to_csv(out_dir / "v22_candidate_summary.csv", index=False)
     trade_distribution.to_csv(out_dir / "v22_trade_distribution.csv", index=False)
+    tail_metrics.to_csv(out_dir / "v23_tail_metrics.csv", index=False)
     _plot_candidate_equity(results_by_symbol, out_dir / "v22_candidate_equity.png")
 
     return V22RunArtifacts(
         summary=summary,
         trade_distribution=trade_distribution,
+        tail_metrics=tail_metrics,
         output_dir=out_dir,
     )

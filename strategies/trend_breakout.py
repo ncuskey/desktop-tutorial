@@ -134,7 +134,7 @@ def trend_breakout_signals(df: pd.DataFrame, params: dict) -> pd.Series:
 
 def trend_breakout_v2_signals(df: pd.DataFrame, params: dict) -> pd.Series:
     """
-    Hardened trend breakout sleeve for V2.2 candidate testing.
+    Hardened trend breakout sleeve for V2.3 edge amplification.
     """
     lookback = int(params.get("lookback", 20))
     atr_col = str(params.get("atr_col", "atr_14"))
@@ -143,6 +143,11 @@ def trend_breakout_v2_signals(df: pd.DataFrame, params: dict) -> pd.Series:
 
     vol_compression_max_pct = float(params.get("vol_compression_max_pct", 0.40))
     breakout_strength_atr_mult = float(params.get("breakout_strength_atr_mult", 0.25))
+    velocity_lookback = int(params.get("velocity_lookback", 6))
+    velocity_threshold = float(params.get("velocity_threshold", 1.0))
+    confirmation_bars = int(params.get("confirmation_bars", 2))
+    expansion_lookback = int(params.get("expansion_lookback", 12))
+    expansion_threshold = float(params.get("expansion_threshold", 1.10))
 
     retest_entry_mode = bool(params.get("retest_entry_mode", False))
     retest_expiry_bars = int(params.get("retest_expiry_bars", 10))
@@ -153,12 +158,22 @@ def trend_breakout_v2_signals(df: pd.DataFrame, params: dict) -> pd.Series:
     max_holding_bars = int(params.get("max_holding_bars", 72))
     vol_contraction_exit_mult = float(params.get("vol_contraction_exit_mult", 0.80))
     vol_contraction_window = int(params.get("vol_contraction_window", 20))
+    vol_exit_pct_rank_threshold = float(params.get("vol_exit_pct_rank_threshold", 0.25))
 
-    partial_take_profit_rr = float(params.get("partial_take_profit_rr", 0.0))
-    partial_take_profit_size = float(params.get("partial_take_profit_size", 0.5))
-    partial_take_profit_size = float(np.clip(partial_take_profit_size, 0.1, 1.0))
+    winner_extension_enabled = bool(params.get("winner_extension_enabled", True))
+    extension_trigger_atr_multiple = float(params.get("extension_trigger_atr_multiple", 2.0))
+    extension_stop_multiplier = float(params.get("extension_stop_multiplier", 2.5))
+    extension_max_holding_bars = int(
+        params.get("extension_max_holding_bars", max_holding_bars * 3)
+    )
 
-    min_bars_between_trades = int(params.get("min_bars_between_trades", 6))
+    partial_take_profit_rr = float(params.get("partial_take_profit_rr", 1.2))
+    partial_take_profit_size = float(params.get("partial_take_profit_size", 0.4))
+    partial_take_profit_size = float(np.clip(partial_take_profit_size, 0.1, 0.9))
+
+    min_bars_between_trades = int(params.get("min_bars_between_trades", 24))
+    dynamic_cooldown_by_vol = bool(params.get("dynamic_cooldown_by_vol", False))
+    high_vol_cooldown_mult = float(params.get("high_vol_cooldown_mult", 1.5))
 
     close = pd.to_numeric(df["close"], errors="coerce")
     high = pd.to_numeric(df["high"], errors="coerce")
@@ -177,6 +192,13 @@ def trend_breakout_v2_signals(df: pd.DataFrame, params: dict) -> pd.Series:
         vol_contraction_window,
         min_periods=max(10, vol_contraction_window // 2),
     ).mean()
+    directional_velocity = (close - close.shift(velocity_lookback)) / atr.replace(0.0, np.nan)
+    recent_range = (
+        high.rolling(expansion_lookback, min_periods=expansion_lookback).max()
+        - low.rolling(expansion_lookback, min_periods=expansion_lookback).min()
+    ) / close.abs().replace(0.0, np.nan)
+    prior_range = recent_range.shift(expansion_lookback)
+    range_expansion_ratio = recent_range / prior_range.replace(0.0, np.nan)
 
     signal = pd.Series(0.0, index=df.index, dtype=float)
     current_pos = 0.0
@@ -185,11 +207,14 @@ def trend_breakout_v2_signals(df: pd.DataFrame, params: dict) -> pd.Series:
     bars_in_trade = 0
     trail_stop = np.nan
     partial_tp_taken = False
-    last_exit_i = -10_000_000
+    extended_mode = False
+    next_entry_i = -10_000_000
 
     pending_dir = 0
     pending_level = np.nan
     pending_expiry_i = -1
+    long_break_streak = 0
+    short_break_streak = 0
 
     for i in range(len(df)):
         px = float(close.iloc[i]) if pd.notna(close.iloc[i]) else np.nan
@@ -199,13 +224,26 @@ def trend_breakout_v2_signals(df: pd.DataFrame, params: dict) -> pd.Series:
         up_i = float(donchian_upper.iloc[i]) if pd.notna(donchian_upper.iloc[i]) else np.nan
         dn_i = float(donchian_lower.iloc[i]) if pd.notna(donchian_lower.iloc[i]) else np.nan
         atrn_ma_i = float(atr_ma.iloc[i]) if pd.notna(atr_ma.iloc[i]) else np.nan
+        vel_i = (
+            float(directional_velocity.iloc[i])
+            if pd.notna(directional_velocity.iloc[i])
+            else np.nan
+        )
+        expansion_i = (
+            float(range_expansion_ratio.iloc[i])
+            if pd.notna(range_expansion_ratio.iloc[i])
+            else np.nan
+        )
 
         if not np.isfinite(px):
             signal.iloc[i] = current_pos
             continue
 
-        can_open_new = (i - last_exit_i) >= min_bars_between_trades
+        can_open_new = i >= next_entry_i
         compression_ok = (not np.isfinite(atr_rank_i)) or (atr_rank_i <= vol_compression_max_pct)
+        expansion_ok = np.isfinite(expansion_i) and (expansion_i >= expansion_threshold)
+        velocity_long_ok = np.isfinite(vel_i) and (vel_i >= velocity_threshold)
+        velocity_short_ok = np.isfinite(vel_i) and (vel_i <= -velocity_threshold)
 
         long_break = False
         short_break = False
@@ -213,16 +251,38 @@ def trend_breakout_v2_signals(df: pd.DataFrame, params: dict) -> pd.Series:
             long_break = px > up_i and (px - up_i) > (breakout_strength_atr_mult * atr_i)
         if np.isfinite(dn_i) and np.isfinite(atr_i):
             short_break = px < dn_i and (dn_i - px) > (breakout_strength_atr_mult * atr_i)
+        if long_break:
+            long_break_streak += 1
+        else:
+            long_break_streak = 0
+        if short_break:
+            short_break_streak += 1
+        else:
+            short_break_streak = 0
 
         long_entry = False
         short_entry = False
+        long_ready = (
+            can_open_new
+            and compression_ok
+            and expansion_ok
+            and velocity_long_ok
+            and long_break_streak >= confirmation_bars
+        )
+        short_ready = (
+            can_open_new
+            and compression_ok
+            and expansion_ok
+            and velocity_short_ok
+            and short_break_streak >= confirmation_bars
+        )
 
         if retest_entry_mode:
-            if can_open_new and compression_ok and long_break:
+            if long_ready and long_break:
                 pending_dir = 1
                 pending_level = up_i
                 pending_expiry_i = i + retest_expiry_bars
-            elif can_open_new and compression_ok and short_break:
+            elif short_ready and short_break:
                 pending_dir = -1
                 pending_level = dn_i
                 pending_expiry_i = i + retest_expiry_bars
@@ -233,43 +293,61 @@ def trend_breakout_v2_signals(df: pd.DataFrame, params: dict) -> pd.Series:
                 if pending_dir == 1:
                     touched = float(low.iloc[i]) <= (pending_level + tol)
                     confirmed = px >= (pending_level + confirm)
-                    if touched and confirmed and can_open_new and compression_ok:
+                    if touched and confirmed and long_ready:
                         long_entry = True
                         pending_dir = 0
                 else:
                     touched = float(high.iloc[i]) >= (pending_level - tol)
                     confirmed = px <= (pending_level - confirm)
-                    if touched and confirmed and can_open_new and compression_ok:
+                    if touched and confirmed and short_ready:
                         short_entry = True
                         pending_dir = 0
             if pending_dir != 0 and i > pending_expiry_i:
                 pending_dir = 0
         else:
-            long_entry = can_open_new and compression_ok and long_break
-            short_entry = can_open_new and compression_ok and short_break
+            long_entry = long_ready and long_break
+            short_entry = short_ready and short_break
 
         exit_now = False
         if current_pos != 0.0:
             bars_in_trade += 1
+            pos_side = 1.0 if current_pos > 0.0 else -1.0
+
+            if (
+                winner_extension_enabled
+                and not extended_mode
+                and np.isfinite(entry_price)
+                and np.isfinite(entry_atr)
+            ):
+                unrealized = (px - entry_price) * pos_side
+                if unrealized >= (extension_trigger_atr_multiple * entry_atr):
+                    extended_mode = True
 
             if np.isfinite(atr_i):
-                if current_pos > 0:
-                    new_stop = px - trailing_stop_atr_mult * atr_i
+                trail_mult = trailing_stop_atr_mult
+                if extended_mode:
+                    trail_mult = trailing_stop_atr_mult * extension_stop_multiplier
+                if pos_side > 0:
+                    new_stop = px - trail_mult * atr_i
                     trail_stop = max(trail_stop, new_stop) if np.isfinite(trail_stop) else new_stop
                     if np.isfinite(trail_stop) and px < trail_stop:
                         exit_now = True
                 else:
-                    new_stop = px + trailing_stop_atr_mult * atr_i
+                    new_stop = px + trail_mult * atr_i
                     trail_stop = min(trail_stop, new_stop) if np.isfinite(trail_stop) else new_stop
                     if np.isfinite(trail_stop) and px > trail_stop:
                         exit_now = True
 
-            if bars_in_trade >= max_holding_bars:
+            if (not extended_mode) and bars_in_trade >= max_holding_bars:
+                exit_now = True
+            if extended_mode and bars_in_trade >= extension_max_holding_bars:
                 exit_now = True
 
             if np.isfinite(atrn_i) and np.isfinite(atrn_ma_i):
                 if atrn_i <= (vol_contraction_exit_mult * atrn_ma_i):
                     exit_now = True
+            if np.isfinite(atr_rank_i) and atr_rank_i <= vol_exit_pct_rank_threshold:
+                exit_now = True
 
             if (
                 partial_take_profit_rr > 0
@@ -277,11 +355,11 @@ def trend_breakout_v2_signals(df: pd.DataFrame, params: dict) -> pd.Series:
                 and np.isfinite(entry_price)
                 and np.isfinite(entry_atr)
             ):
-                if current_pos > 0 and (px - entry_price) >= (partial_take_profit_rr * entry_atr):
-                    current_pos = partial_take_profit_size
+                if pos_side > 0 and (px - entry_price) >= (partial_take_profit_rr * entry_atr):
+                    current_pos = current_pos * (1.0 - partial_take_profit_size)
                     partial_tp_taken = True
-                elif current_pos < 0 and (entry_price - px) >= (partial_take_profit_rr * entry_atr):
-                    current_pos = -partial_take_profit_size
+                elif pos_side < 0 and (entry_price - px) >= (partial_take_profit_rr * entry_atr):
+                    current_pos = current_pos * (1.0 - partial_take_profit_size)
                     partial_tp_taken = True
 
         if exit_now:
@@ -291,7 +369,12 @@ def trend_breakout_v2_signals(df: pd.DataFrame, params: dict) -> pd.Series:
             bars_in_trade = 0
             trail_stop = np.nan
             partial_tp_taken = False
-            last_exit_i = i
+            extended_mode = False
+            cooldown_bars = min_bars_between_trades
+            if dynamic_cooldown_by_vol and np.isfinite(atr_rank_i):
+                cooldown_scale = 1.0 + high_vol_cooldown_mult * max(0.0, atr_rank_i - 0.5)
+                cooldown_bars = int(round(min_bars_between_trades * cooldown_scale))
+            next_entry_i = i + max(cooldown_bars, min_bars_between_trades)
 
         if current_pos == 0.0:
             if long_entry and not short_entry:
@@ -301,6 +384,8 @@ def trend_breakout_v2_signals(df: pd.DataFrame, params: dict) -> pd.Series:
                 bars_in_trade = 0
                 trail_stop = px - trailing_stop_atr_mult * atr_i if np.isfinite(atr_i) else np.nan
                 partial_tp_taken = False
+                extended_mode = False
+                pending_dir = 0
             elif short_entry and not long_entry:
                 current_pos = -1.0
                 entry_price = px
@@ -308,20 +393,26 @@ def trend_breakout_v2_signals(df: pd.DataFrame, params: dict) -> pd.Series:
                 bars_in_trade = 0
                 trail_stop = px + trailing_stop_atr_mult * atr_i if np.isfinite(atr_i) else np.nan
                 partial_tp_taken = False
-        elif current_pos > 0 and short_entry:
+                extended_mode = False
+                pending_dir = 0
+        elif current_pos > 0 and short_entry and can_open_new:
             current_pos = -1.0
             entry_price = px
             entry_atr = atr_i
             bars_in_trade = 0
             trail_stop = px + trailing_stop_atr_mult * atr_i if np.isfinite(atr_i) else np.nan
             partial_tp_taken = False
-        elif current_pos < 0 and long_entry:
+            extended_mode = False
+            pending_dir = 0
+        elif current_pos < 0 and long_entry and can_open_new:
             current_pos = 1.0
             entry_price = px
             entry_atr = atr_i
             bars_in_trade = 0
             trail_stop = px - trailing_stop_atr_mult * atr_i if np.isfinite(atr_i) else np.nan
             partial_tp_taken = False
+            extended_mode = False
+            pending_dir = 0
 
         signal.iloc[i] = current_pos
 

@@ -26,6 +26,8 @@ def build_trade_meta_features(
     momentum_window: int = 12,
     range_window: int = 50,
     trend_window: int = 20,
+    breakout_velocity_lookback: int = 6,
+    breakout_range_lookback: int = 20,
 ) -> pd.DataFrame:
     """Build per-bar trade-quality meta features using past-only information."""
     required = {
@@ -89,6 +91,10 @@ def build_trade_meta_features(
     atr_mean = atr_norm.rolling(trend_window, min_periods=max(5, trend_window // 2)).mean()
     features["atr_expansion"] = atr_norm / atr_mean.replace(0.0, np.nan)
     features["recent_volatility_change"] = atr_norm.diff()
+    features["atr_expansion_ratio"] = atr_norm / atr_norm.rolling(
+        breakout_range_lookback,
+        min_periods=max(10, breakout_range_lookback // 2),
+    ).mean().replace(0.0, np.nan)
 
     # Trend context
     features["adx_14"] = df["adx_14"]
@@ -119,6 +125,41 @@ def build_trade_meta_features(
     features["position_in_range"] = (close - rolling_min) / range_span
     features["distance_to_high"] = (rolling_max - close) / close.replace(0.0, np.nan)
     features["distance_to_low"] = (close - rolling_min) / close.replace(0.0, np.nan)
+
+    # Breakout-strength context for stronger trade-quality discrimination.
+    atr_abs = pd.to_numeric(
+        df.get("atr_14", atr_norm * close.abs()),
+        errors="coerce",
+    )
+    breakout_velocity = (
+        (close - close.shift(breakout_velocity_lookback))
+        / atr_abs.replace(0.0, np.nan)
+    )
+    features["breakout_velocity"] = breakout_velocity.abs()
+    features["distance_from_range_high"] = (close - rolling_max) / close.replace(0.0, np.nan)
+
+    above_high = close > rolling_max.shift(1)
+    below_low = close < rolling_min.shift(1)
+    breakout_up_streak = (
+        above_high.astype(int)
+        .groupby((~above_high).cumsum())
+        .cumsum()
+        .where(above_high, 0)
+    )
+    breakout_dn_streak = (
+        below_low.astype(int)
+        .groupby((~below_low).cumsum())
+        .cumsum()
+        .where(below_low, 0)
+    )
+    features["number_of_consecutive_breakout_bars"] = np.where(
+        filter_type == "trend",
+        np.maximum(breakout_up_streak, breakout_dn_streak),
+        0.0,
+    )
+
+    acceleration = close.diff().diff()
+    features["price_acceleration"] = acceleration / atr_norm.replace(0.0, np.nan)
 
     # Trade timing context
     bars_since = pd.Series(time_since_last_trade, index=df.index)

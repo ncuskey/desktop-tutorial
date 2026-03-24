@@ -18,6 +18,7 @@ from .tracking import ExperimentTracker
 from .v2_runner import run_v2_evaluation
 from .v21_runner import run_v21_refinement
 from .v22_runner import V22RunArtifacts, run_v22_candidate_hardening
+from .v23_runner import run_v23_edge_amplification, summarize_tail_metrics
 from .walk_forward import WalkForwardResult, run_walk_forward
 
 __all__ = [
@@ -45,4 +46,6 @@ __all__ = [
     "run_walk_forward",
     "V22RunArtifacts",
     "run_v22_candidate_hardening",
+    "run_v23_edge_amplification",
+    "summarize_tail_metrics",
 ]

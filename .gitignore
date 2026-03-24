@@ -11,6 +11,7 @@ outputs/*
 !outputs/v22_candidate_summary.csv
 !outputs/v22_trade_distribution.csv
 !outputs/v22_candidate_equity.png
+!outputs/v23_tail_metrics.csv
 data/sample_ohlcv.csv
 data/real/
 data/dukascopy_raw/
