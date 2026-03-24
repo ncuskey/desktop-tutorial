@@ -25,6 +25,11 @@ outputs/*
 !outputs/strategy_promotion_summary.csv
 !outputs/strategy_promotion_overview.csv
 !outputs/strategy_parameter_alignment.csv
+!outputs/regime_fold_diagnostics.csv
+!outputs/regime_feature_correlations.csv
+!outputs/regime_bin_summary.csv
+!outputs/regime_vs_sharpe.png
+!outputs/regime_bin_performance.png
 !outputs/TrendBreakout_V2/
 !outputs/TrendBreakout_V2/*/
 !outputs/TrendBreakout_V2/*/strategy_research_summary.csv

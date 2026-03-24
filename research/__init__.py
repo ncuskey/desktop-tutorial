@@ -22,6 +22,7 @@ from .v22_runner import V22RunArtifacts, run_v22_candidate_hardening
 from .v23_runner import run_v23_edge_amplification, summarize_tail_metrics
 from .walk_forward import WalkForwardResult, run_walk_forward
 from .strategy_runner import run_strategy_research
+from .regime_diagnostics import run_regime_diagnostics
 from .promotion_framework import (
     PromotionArtifacts,
     PromotionThresholds,
@@ -66,6 +67,7 @@ __all__ = [
     "run_v23_edge_amplification",
     "summarize_tail_metrics",
     "run_strategy_research",
+    "run_regime_diagnostics",
     "PromotionThresholds",
     "SymbolPromotionResult",
     "PromotionArtifacts",
