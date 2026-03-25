@@ -1,5 +1,5 @@
-symbol,trades_total,trades_evaluated,early_exits_count,rule_exit_count,pct_rule_exits,low_mfe_exits,negative_momentum_exits,scaled_count,trades_surviving_pct,avg_loss_avoided_by_early_exit,avg_missed_profit_false_negatives,E_return_pass,E_return_fail,conditional_gap_pass_minus_fail
-EURUSD,12,1,0,2,0.16666666666666666,2,0,0,0.8333333333333334,0.0,0.003138138774814127,0.005412525651742303,,
-GBPUSD,5,1,0,1,0.2,1,0,0,0.8,0.0,0.003300274256311948,0.001572682522315412,,
-AUDUSD,9,1,0,0,0.0,0,0,0,1.0,0.0,0.0,0.007649796779513812,,
-ALL,26,3,0,3,0.12222222222222223,3,0,0,0.8777777777777778,0.0,0.0021461376770420247,0.0048783349845238425,,
+symbol,trades_total,trades_evaluated,early_exits_count,rule_exit_count,pct_rule_exits,low_mfe_exits,negative_momentum_exits,composite_exit_count,pct_composite_exits,scaled_count,trades_surviving_pct,avg_loss_avoided_by_early_exit,avg_missed_profit_false_negatives,E_return_pass,E_return_fail,conditional_gap_pass_minus_fail
+EURUSD,12,0,0,0,0.0,0,0,2,0.16666666666666666,0,0.8333333333333334,0.0,0.003138138774814127,,,
+GBPUSD,5,0,0,0,0.0,0,0,1,0.2,0,0.8,0.0,0.003300274256311948,,,
+AUDUSD,9,0,0,0,0.0,0,0,0,0.0,0,1.0,0.0,0.0,,,
+ALL,26,0,0,0,0.0,0,0,3,0.12222222222222223,0,0.8777777777777778,0.0,0.0021461376770420247,,,

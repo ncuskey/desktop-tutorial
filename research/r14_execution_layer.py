@@ -17,6 +17,7 @@ from metalabel.labels import create_trade_success_labels, entry_mask_from_signal
 from metrics.performance import compute_metrics
 from regime import attach_regime_labels, attach_stable_regime_state
 from strategies import trend_breakout_v2_signals
+from research.r153_composite_scoring import FAILURE_SCORE_CUTOFF, compute_failure_score
 
 
 EARLY_WINDOW = 3
@@ -27,6 +28,7 @@ USE_R15_RULES = True
 EARLY_MFE_THRESHOLD = 0.00065
 EARLY_RETURN3_THRESHOLD = -0.00024
 ENABLE_RULE_LOGGING = True
+USE_R153_COMPOSITE = True
 
 
 @dataclass
@@ -548,6 +550,7 @@ def _apply_execution_layer_to_fold(
     enable_scaling: bool,
     min_hold_bars: int,
     enable_r15_rules: bool,
+    enable_r153_composite: bool,
 ) -> tuple[pd.Series, pd.DataFrame]:
     raw_signal = trend_breakout_v2_signals(test_df, strategy_params).astype(float)
     exec_signal = raw_signal.copy()
@@ -616,6 +619,51 @@ def _apply_execution_layer_to_fold(
         x_eval = pd.DataFrame([row], index=[eval_idx])
 
         rule_exit_reason: str | None = None
+        composite_exit = 0
+        failure_score = np.nan
+
+        # R1.5.3: when composite mode is enabled, this is the primary
+        # failure-removal decision path and meta logic is bypassed.
+        if enable_r153_composite:
+            failure_score = float(compute_failure_score(early))
+            if failure_score <= float(FAILURE_SCORE_CUTOFF):
+                exec_signal.iloc[eval_i : end_i + 1] = 0.0
+                diagnostics.append(
+                    {
+                        "entry_i": entry_i,
+                        "end_i": end_i,
+                        "side": side,
+                        "evaluated": 1,
+                        "meta_score": np.nan,
+                        "decision": "composite_failure_exit",
+                        "used_fallback_scorer": 0,
+                        "rule_exit": 0,
+                        "rule_reason": None,
+                        "composite_exit": 1,
+                        "failure_score": failure_score,
+                        **early,
+                    }
+                )
+                continue
+
+            diagnostics.append(
+                {
+                    "entry_i": entry_i,
+                    "end_i": end_i,
+                    "side": side,
+                    "evaluated": 1,
+                    "meta_score": np.nan,
+                    "decision": "continue_composite",
+                    "used_fallback_scorer": 0,
+                    "rule_exit": 0,
+                    "rule_reason": None,
+                    "composite_exit": 0,
+                    "failure_score": failure_score,
+                    **early,
+                }
+            )
+            continue
+
         if enable_r15_rules:
             if _safe_float(early.get("early_mfe"), np.nan) < EARLY_MFE_THRESHOLD:
                 rule_exit_reason = "low_mfe"
@@ -635,6 +683,8 @@ def _apply_execution_layer_to_fold(
                     "used_fallback_scorer": 0,
                     "rule_exit": 1,
                     "rule_reason": rule_exit_reason,
+                    "composite_exit": composite_exit,
+                    "failure_score": failure_score,
                     **early,
                 }
             )
@@ -680,6 +730,8 @@ def _apply_execution_layer_to_fold(
                 "used_fallback_scorer": int(used_fallback),
                 "rule_exit": 0,
                 "rule_reason": None,
+                "composite_exit": 0,
+                "failure_score": failure_score,
                 **early,
             }
         )
@@ -716,6 +768,7 @@ def run_r14_execution_layer(
     meta_min_train_samples: int = 30,
     allow_fallback_scorer: bool = True,
     enable_r15_rules: bool = USE_R15_RULES,
+    enable_r153_composite: bool = USE_R153_COMPOSITE,
 ) -> R14ExecutionArtifacts:
     if strategy != "TrendBreakout_V2":
         raise ValueError("R1.4.1 currently supports strategy='TrendBreakout_V2' only.")
@@ -745,6 +798,8 @@ def run_r14_execution_layer(
     rule_effectiveness_rows: list[dict[str, Any]] = []
     all_rule_removed_returns: list[float] = []
     all_rule_kept_returns: list[float] = []
+    score_distribution_rows: list[dict[str, Any]] = []
+    score_vs_return_rows: list[dict[str, Any]] = []
 
     for symbol in symbols:
         strategy_params = _load_hardened_params(artifacts_root_path, symbol=symbol)
@@ -769,6 +824,7 @@ def run_r14_execution_layer(
         total_early_exits = 0
         total_scaled = 0
         total_rule_exits = 0
+        total_composite_exits = 0
         total_low_mfe_exits = 0
         total_negative_momentum_exits = 0
         total_removed_trades = 0
@@ -817,6 +873,7 @@ def run_r14_execution_layer(
                 enable_scaling=use_scaling,
                 min_hold_bars=min_hold_bars,
                 enable_r15_rules=enable_r15_rules,
+                enable_r153_composite=enable_r153_composite,
             )
 
             bt_base = run_backtest(test_df, raw_signal, cost_model=cost_model)
@@ -862,12 +919,16 @@ def run_r14_execution_layer(
                     score = np.nan
                     rule_exit = 0
                     rule_reason = None
+                    composite_exit = 0
+                    failure_score = np.nan
                 else:
                     decision = str(decision_row.iloc[0].get("decision", "continue_missing"))
                     score = _safe_float(decision_row.iloc[0].get("meta_score"), np.nan)
                     rule_exit = int(_safe_float(decision_row.iloc[0].get("rule_exit"), 0.0))
                     raw_reason = decision_row.iloc[0].get("rule_reason")
                     rule_reason = None if pd.isna(raw_reason) else str(raw_reason)
+                    composite_exit = int(_safe_float(decision_row.iloc[0].get("composite_exit"), 0.0))
+                    failure_score = _safe_float(decision_row.iloc[0].get("failure_score"), np.nan)
 
                 segment_records.append(
                     {
@@ -880,6 +941,8 @@ def run_r14_execution_layer(
                         "decision": decision,
                         "rule_exit": rule_exit,
                         "rule_reason": rule_reason,
+                        "composite_exit": composite_exit,
+                        "failure_score": failure_score,
                     }
                 )
 
@@ -891,10 +954,20 @@ def run_r14_execution_layer(
             rule_exits_fold = int(pd.to_numeric(seg_df.get("rule_exit"), errors="coerce").fillna(0).astype(int).sum()) if not seg_df.empty else 0
             low_mfe_exits_fold = int((seg_df["rule_reason"] == "low_mfe").sum()) if not seg_df.empty else 0
             negative_momentum_exits_fold = int((seg_df["rule_reason"] == "negative_momentum").sum()) if not seg_df.empty else 0
-            rejected_mask = (
-                (seg_df["decision"] == "early_fail_exit")
-                | pd.to_numeric(seg_df.get("rule_exit"), errors="coerce").fillna(0).astype(int).astype(bool)
-            ) if not seg_df.empty else pd.Series([], dtype=bool)
+            composite_exits_fold = int(pd.to_numeric(seg_df.get("composite_exit"), errors="coerce").fillna(0).astype(int).sum()) if not seg_df.empty else 0
+            if not seg_df.empty:
+                if enable_r153_composite:
+                    rejected_mask = pd.to_numeric(
+                        seg_df.get("composite_exit"),
+                        errors="coerce",
+                    ).fillna(0).astype(int).astype(bool)
+                else:
+                    rejected_mask = (
+                        (seg_df["decision"] == "early_fail_exit")
+                        | pd.to_numeric(seg_df.get("rule_exit"), errors="coerce").fillna(0).astype(int).astype(bool)
+                    )
+            else:
+                rejected_mask = pd.Series([], dtype=bool)
             removed_fold = int(rejected_mask.sum()) if not seg_df.empty else 0
             survivors_fold = int((~rejected_mask).sum()) if not seg_df.empty else 0
             survival_pct_fold = float(survivors_fold / max(trades_fold, 1))
@@ -926,6 +999,8 @@ def run_r14_execution_layer(
                     "pct_rule_exits": pct_rule_exits_fold,
                     "low_mfe_exits": low_mfe_exits_fold,
                     "negative_momentum_exits": negative_momentum_exits_fold,
+                    "composite_exit_count": composite_exits_fold,
+                    "pct_composite_exits": float(composite_exits_fold / max(trades_fold, 1)),
                     "scaled_count": scaled_fold,
                     "trades_total": trades_fold,
                     "trades_evaluated": evaluated_fold,
@@ -954,10 +1029,18 @@ def run_r14_execution_layer(
                     }
                 )
 
-                rejected = seg_df[
-                    (seg_df["decision"] == "early_fail_exit")
-                    | pd.to_numeric(seg_df.get("rule_exit"), errors="coerce").fillna(0).astype(int).astype(bool)
-                ].copy()
+                if enable_r153_composite:
+                    rejected = seg_df[
+                        pd.to_numeric(seg_df.get("composite_exit"), errors="coerce")
+                        .fillna(0)
+                        .astype(int)
+                        .astype(bool)
+                    ].copy()
+                else:
+                    rejected = seg_df[
+                        (seg_df["decision"] == "early_fail_exit")
+                        | pd.to_numeric(seg_df.get("rule_exit"), errors="coerce").fillna(0).astype(int).astype(bool)
+                    ].copy()
                 if not rejected.empty:
                     improvement = rejected["execution_return"] - rejected["baseline_return"]
                     avoid = improvement.where(rejected["baseline_return"] < 0, np.nan)
@@ -976,7 +1059,22 @@ def run_r14_execution_layer(
                     seg_df.loc[rejected_mask, "baseline_return"].dropna().tolist()
                 )
 
-                if enable_r15_rules:
+                if enable_r153_composite:
+                    composite_removed = seg_df[
+                        pd.to_numeric(seg_df.get("composite_exit"), errors="coerce")
+                        .fillna(0)
+                        .astype(int)
+                        .astype(bool)
+                    ]["baseline_return"]
+                    composite_kept = seg_df[
+                        ~pd.to_numeric(seg_df.get("composite_exit"), errors="coerce")
+                        .fillna(0)
+                        .astype(int)
+                        .astype(bool)
+                    ]["baseline_return"]
+                    symbol_rule_removed_returns.extend(pd.to_numeric(composite_removed, errors="coerce").dropna().tolist())
+                    symbol_rule_kept_returns.extend(pd.to_numeric(composite_kept, errors="coerce").dropna().tolist())
+                elif enable_r15_rules:
                     rule_removed = seg_df[
                         pd.to_numeric(seg_df.get("rule_exit"), errors="coerce").fillna(0).astype(int).astype(bool)
                     ]["baseline_return"]
@@ -985,12 +1083,32 @@ def run_r14_execution_layer(
                     ]["baseline_return"]
                     symbol_rule_removed_returns.extend(pd.to_numeric(rule_removed, errors="coerce").dropna().tolist())
                     symbol_rule_kept_returns.extend(pd.to_numeric(rule_kept, errors="coerce").dropna().tolist())
+                if enable_r153_composite:
+                    fs = pd.to_numeric(seg_df.get("failure_score"), errors="coerce")
+                    if fs.notna().any():
+                        for score_val, grp in seg_df.loc[fs.notna()].groupby(fs.loc[fs.notna()]):
+                            score_distribution_rows.append(
+                                {
+                                    "symbol": symbol,
+                                    "failure_score": int(score_val),
+                                    "trade_count": int(len(grp)),
+                                }
+                            )
+                            score_vs_return_rows.append(
+                                {
+                                    "symbol": symbol,
+                                    "failure_score": int(score_val),
+                                    "avg_realized_return": float(pd.to_numeric(grp["baseline_return"], errors="coerce").mean()),
+                                    "trade_count": int(len(grp)),
+                                }
+                            )
 
             total_trades += trades_fold
             total_evaluated += evaluated_fold
             total_early_exits += early_exits_fold
             total_scaled += scaled_fold
             total_rule_exits += rule_exits_fold
+            total_composite_exits += composite_exits_fold
             total_low_mfe_exits += low_mfe_exits_fold
             total_negative_momentum_exits += negative_momentum_exits_fold
             total_removed_trades += removed_fold
@@ -1035,6 +1153,8 @@ def run_r14_execution_layer(
                     "pct_rule_exits": float(total_rule_exits / max(total_trades, 1)),
                     "low_mfe_exits": int(total_low_mfe_exits),
                     "negative_momentum_exits": int(total_negative_momentum_exits),
+                    "composite_exit_count": int(total_composite_exits if enable_r153_composite else 0),
+                    "pct_composite_exits": float((total_composite_exits / max(total_trades, 1)) if enable_r153_composite else 0.0),
                     "TradesSurvivingPct": float((total_trades - total_removed_trades) / max(total_trades, 1)),
                     "AvgReturnSurvivors": float(np.mean(survivor_returns)) if survivor_returns else np.nan,
                     "AvgReturnRejected": float(np.mean(rejected_returns)) if rejected_returns else np.nan,
@@ -1052,6 +1172,8 @@ def run_r14_execution_layer(
                 "pct_rule_exits": float(total_rule_exits / max(total_trades, 1)),
                 "low_mfe_exits": int(total_low_mfe_exits),
                 "negative_momentum_exits": int(total_negative_momentum_exits),
+                "composite_exit_count": int(total_composite_exits if enable_r153_composite else 0),
+                "pct_composite_exits": float((total_composite_exits / max(total_trades, 1)) if enable_r153_composite else 0.0),
                 "scaled_count": int(total_scaled),
                 "trades_surviving_pct": float((total_trades - total_removed_trades) / max(total_trades, 1)),
                 "avg_loss_avoided_by_early_exit": float(np.mean(loss_avoided_list)) if loss_avoided_list else 0.0,
@@ -1066,7 +1188,29 @@ def run_r14_execution_layer(
             }
         )
 
-        if enable_r15_rules:
+        if enable_r153_composite:
+            e_all = float(np.mean(symbol_rule_kept_returns + symbol_rule_removed_returns)) if (symbol_rule_kept_returns or symbol_rule_removed_returns) else np.nan
+            e_after_composite = float(np.mean(symbol_rule_kept_returns)) if symbol_rule_kept_returns else np.nan
+            e_removed = float(np.mean(symbol_rule_removed_returns)) if symbol_rule_removed_returns else np.nan
+            removed_trade_count = int(len(symbol_rule_removed_returns))
+            kept_trade_count = int(len(symbol_rule_kept_returns))
+            pct_removed = float(removed_trade_count / max(removed_trade_count + kept_trade_count, 1))
+            rule_effectiveness_rows.append(
+                {
+                    "symbol": symbol,
+                    "E_all": e_all,
+                    "E_after_composite": e_after_composite,
+                    "E_removed": e_removed,
+                    "removed_trade_count": removed_trade_count,
+                    "kept_trade_count": kept_trade_count,
+                    "pct_removed": pct_removed,
+                    "rule_low_mfe_count": int(total_low_mfe_exits),
+                    "rule_neg_momentum_count": int(total_negative_momentum_exits),
+                }
+            )
+            all_rule_removed_returns.extend(symbol_rule_removed_returns)
+            all_rule_kept_returns.extend(symbol_rule_kept_returns)
+        elif enable_r15_rules:
             e_all = float(np.mean(symbol_rule_kept_returns + symbol_rule_removed_returns)) if (symbol_rule_kept_returns or symbol_rule_removed_returns) else np.nan
             e_after_rules = float(np.mean(symbol_rule_kept_returns)) if symbol_rule_kept_returns else np.nan
             e_removed = float(np.mean(symbol_rule_removed_returns)) if symbol_rule_removed_returns else np.nan
@@ -1112,6 +1256,8 @@ def run_r14_execution_layer(
                     "negative_momentum_exits": int(
                         pd.to_numeric(grp["negative_momentum_exits"], errors="coerce").sum()
                     ),
+                    "composite_exit_count": int(pd.to_numeric(grp.get("composite_exit_count"), errors="coerce").sum()) if "composite_exit_count" in grp else 0,
+                    "pct_composite_exits": float(pd.to_numeric(grp.get("pct_composite_exits"), errors="coerce").mean()) if "pct_composite_exits" in grp else 0.0,
                     "TradesSurvivingPct": float(pd.to_numeric(grp["TradesSurvivingPct"], errors="coerce").mean()),
                     "AvgReturnSurvivors": float(pd.to_numeric(grp["AvgReturnSurvivors"], errors="coerce").mean()),
                     "AvgReturnRejected": float(pd.to_numeric(grp["AvgReturnRejected"], errors="coerce").mean()),
@@ -1131,6 +1277,8 @@ def run_r14_execution_layer(
             "negative_momentum_exits": int(
                 pd.to_numeric(coverage["negative_momentum_exits"], errors="coerce").sum()
             ),
+            "composite_exit_count": int(pd.to_numeric(coverage.get("composite_exit_count"), errors="coerce").sum()) if "composite_exit_count" in coverage else 0,
+            "pct_composite_exits": float(pd.to_numeric(coverage.get("pct_composite_exits"), errors="coerce").mean()) if "pct_composite_exits" in coverage else 0.0,
             "scaled_count": int(pd.to_numeric(coverage["scaled_count"], errors="coerce").sum()),
             "trades_surviving_pct": float(pd.to_numeric(coverage["trades_surviving_pct"], errors="coerce").mean()),
             "avg_loss_avoided_by_early_exit": float(
@@ -1148,7 +1296,23 @@ def run_r14_execution_layer(
         coverage = pd.concat([coverage, pd.DataFrame([all_cov])], ignore_index=True)
 
     rule_effectiveness = pd.DataFrame(rule_effectiveness_rows)
-    if enable_r15_rules:
+    if enable_r153_composite:
+        removed_count_all = int(len(all_rule_removed_returns))
+        kept_count_all = int(len(all_rule_kept_returns))
+        if not rule_effectiveness.empty:
+            all_row = {
+                "symbol": "ALL",
+                "E_all": float(np.mean(all_rule_removed_returns + all_rule_kept_returns)) if (all_rule_removed_returns or all_rule_kept_returns) else np.nan,
+                "E_after_composite": float(np.mean(all_rule_kept_returns)) if all_rule_kept_returns else np.nan,
+                "E_removed": float(np.mean(all_rule_removed_returns)) if all_rule_removed_returns else np.nan,
+                "removed_trade_count": removed_count_all,
+                "kept_trade_count": kept_count_all,
+                "pct_removed": float(removed_count_all / max(removed_count_all + kept_count_all, 1)),
+                "rule_low_mfe_count": 0,
+                "rule_neg_momentum_count": 0,
+            }
+            rule_effectiveness = pd.concat([rule_effectiveness, pd.DataFrame([all_row])], ignore_index=True)
+    elif enable_r15_rules:
         removed_count_all = int(len(all_rule_removed_returns))
         kept_count_all = int(len(all_rule_kept_returns))
         if not rule_effectiveness.empty:
@@ -1172,6 +1336,36 @@ def run_r14_execution_layer(
     coverage.to_csv(out_dir / "r14_execution_coverage.csv", index=False)
     conditional_stats.to_csv(out_dir / "r14_execution_conditional_stats.csv", index=False)
     rule_effectiveness.to_csv(out_dir / "r15_rule_effectiveness.csv", index=False)
+    if score_distribution_rows:
+        score_distribution_df = (
+            pd.DataFrame(score_distribution_rows)
+            .groupby(["symbol", "failure_score"], as_index=False, observed=False)["trade_count"]
+            .sum()
+            .sort_values(["symbol", "failure_score"])
+            .reset_index(drop=True)
+        )
+        score_distribution_df.to_csv(out_dir / "r153_score_distribution.csv", index=False)
+    else:
+        pd.DataFrame(columns=["symbol", "failure_score", "trade_count"]).to_csv(
+            out_dir / "r153_score_distribution.csv", index=False
+        )
+
+    if score_vs_return_rows:
+        score_vs_return_df = (
+            pd.DataFrame(score_vs_return_rows)
+            .groupby(["symbol", "failure_score"], as_index=False, observed=False)
+            .agg(
+                avg_realized_return=("avg_realized_return", "mean"),
+                trade_count=("trade_count", "sum"),
+            )
+            .sort_values(["symbol", "failure_score"])
+            .reset_index(drop=True)
+        )
+        score_vs_return_df.to_csv(out_dir / "r153_score_vs_return.csv", index=False)
+    else:
+        pd.DataFrame(columns=["symbol", "failure_score", "avg_realized_return", "trade_count"]).to_csv(
+            out_dir / "r153_score_vs_return.csv", index=False
+        )
 
     return R14ExecutionArtifacts(
         comparison=comparison,

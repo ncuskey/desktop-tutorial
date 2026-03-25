@@ -70,6 +70,17 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Disable fixed R1.5 failure-removal rules.",
     )
+    parser.add_argument(
+        "--enable-r153-composite",
+        action="store_true",
+        default=True,
+        help="Enable R1.5.3 composite failure scoring exits (default: enabled).",
+    )
+    parser.add_argument(
+        "--disable-r153-composite",
+        action="store_true",
+        help="Disable R1.5.3 composite failure scoring exits.",
+    )
     return parser
 
 
@@ -95,6 +106,7 @@ def main() -> None:
         meta_min_train_samples=args.meta_min_train_samples,
         allow_fallback_scorer=(args.allow_fallback_scorer and not args.disable_fallback_scorer),
         enable_r15_rules=(args.enable_r15_rules and not args.disable_r15_rules),
+        enable_r153_composite=(args.enable_r153_composite and not args.disable_r153_composite),
     )
 
     print("R1.4.1 execution-layer run completed.")
