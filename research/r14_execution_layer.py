@@ -18,6 +18,7 @@ from metrics.performance import compute_metrics
 from regime import attach_regime_labels, attach_stable_regime_state
 from strategies import trend_breakout_v2_signals
 from research.r153_composite_scoring import FAILURE_SCORE_CUTOFF, compute_failure_score
+from research.r16_position_sizing import compute_position_size
 
 
 EARLY_WINDOW = 3
@@ -29,6 +30,8 @@ EARLY_MFE_THRESHOLD = 0.00065
 EARLY_RETURN3_THRESHOLD = -0.00024
 ENABLE_RULE_LOGGING = True
 USE_R153_COMPOSITE = True
+USE_R16_POSITION_SIZING = True
+MAX_POSITION_SIZE = 2.0
 
 
 @dataclass
@@ -551,6 +554,8 @@ def _apply_execution_layer_to_fold(
     min_hold_bars: int,
     enable_r15_rules: bool,
     enable_r153_composite: bool,
+    enable_r16_position_sizing: bool,
+    max_position_size: float,
 ) -> tuple[pd.Series, pd.DataFrame]:
     raw_signal = trend_breakout_v2_signals(test_df, strategy_params).astype(float)
     exec_signal = raw_signal.copy()
@@ -571,6 +576,7 @@ def _apply_execution_layer_to_fold(
                     "decision": "continue_short_trade",
                     "rule_exit": 0,
                     "rule_reason": None,
+                    "size_multiplier": 1.0,
                 }
             )
             continue
@@ -587,6 +593,7 @@ def _apply_execution_layer_to_fold(
                     "decision": "continue_no_window",
                     "rule_exit": 0,
                     "rule_reason": None,
+                    "size_multiplier": 1.0,
                 }
             )
             continue
@@ -610,6 +617,7 @@ def _apply_execution_layer_to_fold(
                     "decision": "continue_invalid_early",
                     "rule_exit": 0,
                     "rule_reason": None,
+                    "size_multiplier": 1.0,
                 }
             )
             continue
@@ -621,6 +629,35 @@ def _apply_execution_layer_to_fold(
         rule_exit_reason: str | None = None
         composite_exit = 0
         failure_score = np.nan
+
+        if enable_r16_position_sizing:
+            side_sign = float(np.sign(side))
+            size_multiplier = float(
+                np.clip(
+                    compute_position_size(early),
+                    0.0,
+                    max(max_position_size, 0.0),
+                )
+            )
+            exec_signal.iloc[eval_i : end_i + 1] = side_sign * size_multiplier
+            diagnostics.append(
+                {
+                    "entry_i": entry_i,
+                    "end_i": end_i,
+                    "side": side,
+                    "evaluated": 1,
+                    "meta_score": np.nan,
+                    "decision": "r16_position_resize",
+                    "used_fallback_scorer": 0,
+                    "rule_exit": 0,
+                    "rule_reason": None,
+                    "composite_exit": 0,
+                    "failure_score": np.nan,
+                    "size_multiplier": size_multiplier,
+                    **early,
+                }
+            )
+            continue
 
         # R1.5.3: when composite mode is enabled, this is the primary
         # failure-removal decision path and meta logic is bypassed.
@@ -641,6 +678,7 @@ def _apply_execution_layer_to_fold(
                         "rule_reason": None,
                         "composite_exit": 1,
                         "failure_score": failure_score,
+                        "size_multiplier": 1.0,
                         **early,
                     }
                 )
@@ -659,6 +697,7 @@ def _apply_execution_layer_to_fold(
                     "rule_reason": None,
                     "composite_exit": 0,
                     "failure_score": failure_score,
+                    "size_multiplier": 1.0,
                     **early,
                 }
             )
@@ -685,6 +724,7 @@ def _apply_execution_layer_to_fold(
                     "rule_reason": rule_exit_reason,
                     "composite_exit": composite_exit,
                     "failure_score": failure_score,
+                    "size_multiplier": 1.0,
                     **early,
                 }
             )
@@ -732,6 +772,7 @@ def _apply_execution_layer_to_fold(
                 "rule_reason": None,
                 "composite_exit": 0,
                 "failure_score": failure_score,
+                "size_multiplier": 1.0,
                 **early,
             }
         )
@@ -769,6 +810,8 @@ def run_r14_execution_layer(
     allow_fallback_scorer: bool = True,
     enable_r15_rules: bool = USE_R15_RULES,
     enable_r153_composite: bool = USE_R153_COMPOSITE,
+    enable_r16_position_sizing: bool = USE_R16_POSITION_SIZING,
+    max_position_size: float = MAX_POSITION_SIZE,
 ) -> R14ExecutionArtifacts:
     if strategy != "TrendBreakout_V2":
         raise ValueError("R1.4.1 currently supports strategy='TrendBreakout_V2' only.")
@@ -777,7 +820,7 @@ def run_r14_execution_layer(
     if early_window < 1:
         raise ValueError("early_window must be >= 1")
 
-    use_scaling = (not disable_scaling) and (not fixed_size_only)
+    use_scaling = (not enable_r16_position_sizing) and (not disable_scaling) and (not fixed_size_only)
     artifacts_root_path = Path(artifacts_root)
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -800,6 +843,8 @@ def run_r14_execution_layer(
     all_rule_kept_returns: list[float] = []
     score_distribution_rows: list[dict[str, Any]] = []
     score_vs_return_rows: list[dict[str, Any]] = []
+    size_distribution_rows: list[dict[str, Any]] = []
+    size_vs_return_rows: list[dict[str, Any]] = []
 
     for symbol in symbols:
         strategy_params = _load_hardened_params(artifacts_root_path, symbol=symbol)
@@ -828,6 +873,8 @@ def run_r14_execution_layer(
         total_low_mfe_exits = 0
         total_negative_momentum_exits = 0
         total_removed_trades = 0
+        total_position_size = 0.0
+        total_position_size_count = 0
         survivor_returns: list[float] = []
         rejected_returns: list[float] = []
         baseline_fail_returns: list[float] = []
@@ -874,6 +921,8 @@ def run_r14_execution_layer(
                 min_hold_bars=min_hold_bars,
                 enable_r15_rules=enable_r15_rules,
                 enable_r153_composite=enable_r153_composite,
+                enable_r16_position_sizing=enable_r16_position_sizing,
+                max_position_size=max_position_size,
             )
 
             bt_base = run_backtest(test_df, raw_signal, cost_model=cost_model)
@@ -881,7 +930,11 @@ def run_r14_execution_layer(
                 test_df,
                 exec_signal,
                 cost_model=cost_model,
-                max_abs_position=max(1.0, scale_factor) if use_scaling else 1.0,
+                max_abs_position=(
+                    max_position_size
+                    if enable_r16_position_sizing
+                    else (max(1.0, scale_factor) if use_scaling else 1.0)
+                ),
             )
             met_base = compute_metrics(
                 bt_base.returns,
@@ -921,6 +974,7 @@ def run_r14_execution_layer(
                     rule_reason = None
                     composite_exit = 0
                     failure_score = np.nan
+                    size_multiplier = 1.0
                 else:
                     decision = str(decision_row.iloc[0].get("decision", "continue_missing"))
                     score = _safe_float(decision_row.iloc[0].get("meta_score"), np.nan)
@@ -929,6 +983,7 @@ def run_r14_execution_layer(
                     rule_reason = None if pd.isna(raw_reason) else str(raw_reason)
                     composite_exit = int(_safe_float(decision_row.iloc[0].get("composite_exit"), 0.0))
                     failure_score = _safe_float(decision_row.iloc[0].get("failure_score"), np.nan)
+                    size_multiplier = _safe_float(decision_row.iloc[0].get("size_multiplier"), 1.0)
 
                 segment_records.append(
                     {
@@ -943,6 +998,7 @@ def run_r14_execution_layer(
                         "rule_reason": rule_reason,
                         "composite_exit": composite_exit,
                         "failure_score": failure_score,
+                        "size_multiplier": size_multiplier,
                     }
                 )
 
@@ -956,7 +1012,9 @@ def run_r14_execution_layer(
             negative_momentum_exits_fold = int((seg_df["rule_reason"] == "negative_momentum").sum()) if not seg_df.empty else 0
             composite_exits_fold = int(pd.to_numeric(seg_df.get("composite_exit"), errors="coerce").fillna(0).astype(int).sum()) if not seg_df.empty else 0
             if not seg_df.empty:
-                if enable_r153_composite:
+                if enable_r16_position_sizing:
+                    rejected_mask = pd.Series(False, index=seg_df.index, dtype=bool)
+                elif enable_r153_composite:
                     rejected_mask = pd.to_numeric(
                         seg_df.get("composite_exit"),
                         errors="coerce",
@@ -971,6 +1029,11 @@ def run_r14_execution_layer(
             removed_fold = int(rejected_mask.sum()) if not seg_df.empty else 0
             survivors_fold = int((~rejected_mask).sum()) if not seg_df.empty else 0
             survival_pct_fold = float(survivors_fold / max(trades_fold, 1))
+            avg_position_size_fold = (
+                float(pd.to_numeric(seg_df["size_multiplier"], errors="coerce").fillna(1.0).mean())
+                if not seg_df.empty
+                else 1.0
+            )
 
             avg_survivor_ret = float(seg_df.loc[~rejected_mask, "execution_return"].mean()) if not seg_df.empty else 0.0
             avg_rejected_ret = float(seg_df.loc[rejected_mask, "baseline_return"].mean()) if not seg_df.empty else 0.0
@@ -1010,6 +1073,9 @@ def run_r14_execution_layer(
                     "model_fitted": bool(model is not None),
                     "used_fallback_scorer": bool(model is None and fallback_model_state is not None),
                     "train_meta_samples": int(len(train_meta)),
+                    "avg_position_size": avg_position_size_fold,
+                    "weighted_expectancy": execution_expectancy_fold,
+                    "weighted_return": float(pd.to_numeric(bt_exec.returns, errors="coerce").mean()),
                 }
             )
 
@@ -1058,6 +1124,26 @@ def run_r14_execution_layer(
                 rejected_returns.extend(
                     seg_df.loc[rejected_mask, "baseline_return"].dropna().tolist()
                 )
+                total_position_size += float(
+                    pd.to_numeric(seg_df["size_multiplier"], errors="coerce").fillna(1.0).sum()
+                )
+                total_position_size_count += int(len(seg_df))
+                for _, seg_row in seg_df.iterrows():
+                    size_val = _safe_float(seg_row.get("size_multiplier"), 1.0)
+                    size_distribution_rows.append(
+                        {
+                            "symbol": symbol,
+                            "size_multiplier": size_val,
+                        }
+                    )
+                    size_vs_return_rows.append(
+                        {
+                            "symbol": symbol,
+                            "size_multiplier": size_val,
+                            "realized_return": _safe_float(seg_row.get("baseline_return"), np.nan),
+                            "weighted_return": _safe_float(seg_row.get("execution_return"), np.nan),
+                        }
+                    )
 
                 if enable_r153_composite:
                     composite_removed = seg_df[
@@ -1137,9 +1223,14 @@ def run_r14_execution_layer(
                     "pct_rule_exits": 0.0,
                     "low_mfe_exits": 0,
                     "negative_momentum_exits": 0,
+                    "composite_exit_count": 0,
+                    "pct_composite_exits": 0.0,
                     "TradesSurvivingPct": 1.0,
                     "AvgReturnSurvivors": float(np.mean(baseline_pass_returns)) if baseline_pass_returns else np.nan,
                     "AvgReturnRejected": np.nan,
+                    "avg_position_size": 1.0,
+                    "weighted_expectancy": _safe_float(mt_base.get("Expectancy")),
+                    "weighted_return": float(pd.to_numeric(stitched_base, errors="coerce").mean()),
                 },
                 {
                     "symbol": symbol,
@@ -1158,6 +1249,9 @@ def run_r14_execution_layer(
                     "TradesSurvivingPct": float((total_trades - total_removed_trades) / max(total_trades, 1)),
                     "AvgReturnSurvivors": float(np.mean(survivor_returns)) if survivor_returns else np.nan,
                     "AvgReturnRejected": float(np.mean(rejected_returns)) if rejected_returns else np.nan,
+                    "avg_position_size": float(total_position_size / max(total_position_size_count, 1)),
+                    "weighted_expectancy": _safe_float(mt_exec.get("Expectancy")),
+                    "weighted_return": float(pd.to_numeric(stitched_exec, errors="coerce").mean()),
                 },
             ]
         )
@@ -1185,6 +1279,7 @@ def run_r14_execution_layer(
                     if baseline_pass_returns and baseline_fail_returns
                     else np.nan
                 ),
+                "avg_position_size": float(total_position_size / max(total_position_size_count, 1)),
             }
         )
 
@@ -1261,6 +1356,9 @@ def run_r14_execution_layer(
                     "TradesSurvivingPct": float(pd.to_numeric(grp["TradesSurvivingPct"], errors="coerce").mean()),
                     "AvgReturnSurvivors": float(pd.to_numeric(grp["AvgReturnSurvivors"], errors="coerce").mean()),
                     "AvgReturnRejected": float(pd.to_numeric(grp["AvgReturnRejected"], errors="coerce").mean()),
+                    "avg_position_size": float(pd.to_numeric(grp["avg_position_size"], errors="coerce").mean()),
+                    "weighted_expectancy": float(pd.to_numeric(grp["weighted_expectancy"], errors="coerce").mean()),
+                    "weighted_return": float(pd.to_numeric(grp["weighted_return"], errors="coerce").mean()),
                 }
             )
         comparison = pd.concat([comparison, pd.DataFrame(all_rows)], ignore_index=True)
@@ -1292,6 +1390,7 @@ def run_r14_execution_layer(
             "conditional_gap_pass_minus_fail": float(
                 pd.to_numeric(coverage["conditional_gap_pass_minus_fail"], errors="coerce").mean()
             ),
+            "avg_position_size": float(pd.to_numeric(coverage["avg_position_size"], errors="coerce").mean()),
         }
         coverage = pd.concat([coverage, pd.DataFrame([all_cov])], ignore_index=True)
 
@@ -1336,6 +1435,40 @@ def run_r14_execution_layer(
     coverage.to_csv(out_dir / "r14_execution_coverage.csv", index=False)
     conditional_stats.to_csv(out_dir / "r14_execution_conditional_stats.csv", index=False)
     rule_effectiveness.to_csv(out_dir / "r15_rule_effectiveness.csv", index=False)
+    if size_distribution_rows:
+        size_distribution_df = (
+            pd.DataFrame(size_distribution_rows)
+            .assign(size_multiplier=lambda d: pd.to_numeric(d["size_multiplier"], errors="coerce").round(4))
+            .groupby(["symbol", "size_multiplier"], as_index=False, observed=False)
+            .size()
+            .rename(columns={"size": "trade_count"})
+            .sort_values(["symbol", "size_multiplier"])
+            .reset_index(drop=True)
+        )
+        size_distribution_df.to_csv(out_dir / "r16_size_distribution.csv", index=False)
+    else:
+        pd.DataFrame(columns=["symbol", "size_multiplier", "trade_count"]).to_csv(
+            out_dir / "r16_size_distribution.csv", index=False
+        )
+
+    if size_vs_return_rows:
+        size_vs_return_df = (
+            pd.DataFrame(size_vs_return_rows)
+            .assign(size_multiplier=lambda d: pd.to_numeric(d["size_multiplier"], errors="coerce").round(4))
+            .groupby(["symbol", "size_multiplier"], as_index=False, observed=False)
+            .agg(
+                avg_realized_return=("realized_return", "mean"),
+                avg_weighted_return=("weighted_return", "mean"),
+                trade_count=("size_multiplier", "size"),
+            )
+            .sort_values(["symbol", "size_multiplier"])
+            .reset_index(drop=True)
+        )
+        size_vs_return_df.to_csv(out_dir / "r16_size_vs_return.csv", index=False)
+    else:
+        pd.DataFrame(
+            columns=["symbol", "size_multiplier", "avg_realized_return", "avg_weighted_return", "trade_count"]
+        ).to_csv(out_dir / "r16_size_vs_return.csv", index=False)
     if score_distribution_rows:
         score_distribution_df = (
             pd.DataFrame(score_distribution_rows)

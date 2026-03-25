@@ -53,6 +53,8 @@ outputs/*
 !outputs/r15_rule_effectiveness.csv
 !outputs/r153_score_distribution.csv
 !outputs/r153_score_vs_return.csv
+!outputs/r16_size_distribution.csv
+!outputs/r16_size_vs_return.csv
 !outputs/charts/
 !outputs/charts/r14_threshold_vs_separation.png
 !outputs/charts/r14_percentile_vs_separation.png

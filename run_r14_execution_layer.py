@@ -81,6 +81,23 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Disable R1.5.3 composite failure scoring exits.",
     )
+    parser.add_argument(
+        "--enable-r16-position-sizing",
+        action="store_true",
+        default=True,
+        help="Enable R1.6 confidence-based position resizing (default: enabled).",
+    )
+    parser.add_argument(
+        "--disable-r16-position-sizing",
+        action="store_true",
+        help="Disable R1.6 confidence-based position resizing.",
+    )
+    parser.add_argument(
+        "--max-position-size",
+        type=float,
+        default=2.0,
+        help="Maximum absolute position size when R1.6 sizing is enabled.",
+    )
     return parser
 
 
@@ -107,6 +124,10 @@ def main() -> None:
         allow_fallback_scorer=(args.allow_fallback_scorer and not args.disable_fallback_scorer),
         enable_r15_rules=(args.enable_r15_rules and not args.disable_r15_rules),
         enable_r153_composite=(args.enable_r153_composite and not args.disable_r153_composite),
+        enable_r16_position_sizing=(
+            args.enable_r16_position_sizing and not args.disable_r16_position_sizing
+        ),
+        max_position_size=args.max_position_size,
     )
 
     print("R1.4.1 execution-layer run completed.")
