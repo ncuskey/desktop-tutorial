@@ -1,0 +1,219 @@
+{
+  "strategy": "TrendBreakout_V2",
+  "gate_mode": "score_threshold",
+  "deterministic_rule": "ALLOW if model_score >= train_fold_score_quantile_0.70",
+  "score_quantile": 0.7,
+  "threshold_summary": {
+    "count": 45,
+    "mean": 0.7748443548604598,
+    "std": 0.10085393242640486,
+    "min": 0.5728209071105466,
+    "max": 0.9630682809942537
+  },
+  "thresholds_by_fold": [
+    0.8486172553409576,
+    0.7814845816348224,
+    0.8983365851709956,
+    0.8737222752198162,
+    0.9630682809942537,
+    0.9106843404557003,
+    0.9571356546735033,
+    0.8293297377386981,
+    0.8674503754344314,
+    0.7778691406836686,
+    0.7143006693533869,
+    0.7302443476289955,
+    0.7517310795183495,
+    0.7410404326524855,
+    0.8650587655436428,
+    0.6521884315709486,
+    0.773707927506466,
+    0.8211371700464635,
+    0.9445816380863012,
+    0.9408643531885821,
+    0.7493666416652619,
+    0.6664536747746693,
+    0.6603362146100716,
+    0.6968312393879663,
+    0.7360188887443332,
+    0.6715506349963029,
+    0.6734856397254918,
+    0.7042530700410703,
+    0.8603588116753466,
+    0.8666665764740137,
+    0.7956704227131584,
+    0.8149976355495306,
+    0.8349192327212152,
+    0.8441450592975358,
+    0.7744530462261829,
+    0.6993464006124889,
+    0.5728209071105466,
+    0.628053295701595,
+    0.5833844648786779,
+    0.7955407864460675,
+    0.5936263388900512,
+    0.6563382969492856,
+    0.8109203952434492,
+    0.7885656172791519,
+    0.7473396345647623
+  ],
+  "coefficient_stability": [
+    {
+      "feature": "atr_percentile",
+      "median_coef": 0.2727318480168308,
+      "sign_consistency": 0.6888888888888889
+    },
+    {
+      "feature": "tsmom_48",
+      "median_coef": 0.24464429072276245,
+      "sign_consistency": 0.7333333333333333
+    },
+    {
+      "feature": "vr_6",
+      "median_coef": 0.18754045142404716,
+      "sign_consistency": 0.6
+    },
+    {
+      "feature": "vr_12",
+      "median_coef": 0.17722606046834666,
+      "sign_consistency": 0.6
+    },
+    {
+      "feature": "ema_fast_12",
+      "median_coef": 0.17066309714119846,
+      "sign_consistency": 0.6444444444444445
+    },
+    {
+      "feature": "ema_slow_48",
+      "median_coef": 0.15794792803638735,
+      "sign_consistency": 0.6444444444444445
+    },
+    {
+      "feature": "tsmom_24",
+      "median_coef": 0.14398881287081666,
+      "sign_consistency": 0.6666666666666666
+    },
+    {
+      "feature": "breakout_strength_atr_mult",
+      "median_coef": -0.13970923796957757,
+      "sign_consistency": 0.5777777777777777
+    },
+    {
+      "feature": "adx_14",
+      "median_coef": -0.08569377096313154,
+      "sign_consistency": 0.5333333333333333
+    },
+    {
+      "feature": "ma_slope",
+      "median_coef": 0.08443208225797386,
+      "sign_consistency": 0.6888888888888889
+    },
+    {
+      "feature": "price_acceleration",
+      "median_coef": 0.08056707975405306,
+      "sign_consistency": 0.5555555555555556
+    },
+    {
+      "feature": "tsmom_avg",
+      "median_coef": 0.07488245358592109,
+      "sign_consistency": 0.6666666666666666
+    },
+    {
+      "feature": "adx_slope",
+      "median_coef": -0.0746429549072627,
+      "sign_consistency": 0.6222222222222222
+    },
+    {
+      "feature": "ma_spread",
+      "median_coef": 0.07226877011122636,
+      "sign_consistency": 0.6222222222222222
+    },
+    {
+      "feature": "range_ratio",
+      "median_coef": 0.041902495221736315,
+      "sign_consistency": 0.5111111111111111
+    },
+    {
+      "feature": "vr_24",
+      "median_coef": 0.04125450887204153,
+      "sign_consistency": 0.5777777777777777
+    },
+    {
+      "feature": "atr_ratio",
+      "median_coef": 0.029329936483371094,
+      "sign_consistency": 0.5333333333333333
+    },
+    {
+      "feature": "distance_from_range_high",
+      "median_coef": -0.024417279550098894,
+      "sign_consistency": 0.5333333333333333
+    },
+    {
+      "feature": "atr_expansion_recent",
+      "median_coef": 0.021722031350792745,
+      "sign_consistency": 0.5555555555555556
+    },
+    {
+      "feature": "trend_variance_ratio",
+      "median_coef": 0.01145384669445048,
+      "sign_consistency": 0.5111111111111111
+    },
+    {
+      "feature": "tsmom_72",
+      "median_coef": -0.009939688280896173,
+      "sign_consistency": 0.5333333333333333
+    },
+    {
+      "feature": "breakout_velocity",
+      "median_coef": -0.00713997826410931,
+      "sign_consistency": 0.5111111111111111
+    }
+  ],
+  "tree_rule_snapshots": [
+    "|--- class: 1\n",
+    "|--- class: 1\n",
+    "|--- class: 1\n",
+    "|--- class: 1\n",
+    "|--- class: 1\n",
+    "|--- class: 1\n",
+    "|--- class: 1\n",
+    "|--- class: 1\n",
+    "|--- class: 1\n",
+    "|--- class: 0\n",
+    "|--- class: 0\n",
+    "|--- class: 0\n",
+    "|--- class: 0\n",
+    "|--- class: 0\n",
+    "|--- class: 1\n",
+    "|--- atr_percentile <= 0.33\n|   |--- class: 0\n|--- atr_percentile >  0.33\n|   |--- class: 1\n",
+    "|--- breakout_strength_atr_mult <= 0.53\n|   |--- class: 1\n|--- breakout_strength_atr_mult >  0.53\n|   |--- class: 0\n",
+    "|--- adx_14 <= 22.88\n|   |--- class: 0\n|--- adx_14 >  22.88\n|   |--- class: 1\n",
+    "|--- class: 1\n",
+    "|--- vr_12 <= 1.13\n|   |--- class: 1\n|--- vr_12 >  1.13\n|   |--- class: 1\n",
+    "|--- adx_14 <= 27.27\n|   |--- class: 1\n|--- adx_14 >  27.27\n|   |--- class: 1\n",
+    "|--- adx_14 <= 30.39\n|   |--- class: 1\n|--- adx_14 >  30.39\n|   |--- class: 0\n",
+    "|--- adx_14 <= 27.03\n|   |--- class: 1\n|--- adx_14 >  27.03\n|   |--- class: 0\n",
+    "|--- breakout_velocity <= 1.82\n|   |--- class: 1\n|--- breakout_velocity >  1.82\n|   |--- class: 0\n",
+    "|--- vr_24 <= 0.79\n|   |--- class: 1\n|--- vr_24 >  0.79\n|   |--- class: 0\n",
+    "|--- ma_slope <= 0.22\n|   |--- class: 0\n|--- ma_slope >  0.22\n|   |--- class: 1\n",
+    "|--- ma_slope <= 0.22\n|   |--- class: 0\n|--- ma_slope >  0.22\n|   |--- class: 1\n",
+    "|--- ema_slow_48 <= 1.25\n|   |--- class: 0\n|--- ema_slow_48 >  1.25\n|   |--- class: 1\n",
+    "|--- tsmom_48 <= -0.30\n|   |--- class: 0\n|--- tsmom_48 >  -0.30\n|   |--- class: 1\n",
+    "|--- atr_expansion_recent <= 1.03\n|   |--- class: 1\n|--- atr_expansion_recent >  1.03\n|   |--- class: 0\n",
+    "|--- class: 1\n",
+    "|--- class: 1\n",
+    "|--- class: 1\n",
+    "|--- class: 1\n",
+    "|--- class: 0\n",
+    "|--- class: 0\n",
+    "|--- class: 1\n",
+    "|--- class: 0\n",
+    "|--- class: 0\n",
+    "|--- class: 0\n",
+    "|--- class: 0\n",
+    "|--- class: 0\n",
+    "|--- class: 1\n",
+    "|--- class: 0\n",
+    "|--- class: 1\n"
+  ]
+}

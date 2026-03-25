@@ -8,6 +8,7 @@ from .switch_diagnostics import (
     compute_switches_per_1000_bars,
 )
 from .regime_gated_runner import run_regime_gated_evaluation
+from .r13_trend_gating import run_r13_trend_gating
 from .tracking import ExperimentTracker
 from .v22_runner import V22RunArtifacts, run_v22_candidate_hardening
 from .walk_forward import WalkForwardResult, run_walk_forward
@@ -20,6 +21,7 @@ __all__ = [
     "compute_regime_duration_stats",
     "compute_switches_per_1000_bars",
     "run_regime_gated_evaluation",
+    "run_r13_trend_gating",
     "ExperimentTracker",
     "WalkForwardResult",
     "run_walk_forward",
