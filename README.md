@@ -33,6 +33,24 @@ python3 prototype.py
 
 Artifacts are written to `outputs/`.
 
+## Research journal workflow
+
+Keep `CONSOLIDATED_RESULTS_REPORT.md` as the living research journal.
+
+After each iteration/run, append an entry:
+
+```bash
+python3 run_research_journal.py \
+  --title "R1.x Iteration" \
+  --note "What changed" \
+  --note "Key result or decision"
+```
+
+Optional:
+
+- `--dry-run` to preview the entry without writing.
+- `--allow-duplicate-commit` if you need multiple entries for the same commit.
+
 ## Notes
 
 - Current default run uses generated sample OHLCV data (`data/sample_ohlcv.csv`).

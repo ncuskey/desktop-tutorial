@@ -236,3 +236,73 @@ Interpretation:
 3. **Most consistent tactical signal:** risk/selectivity controls can improve drawdown/overtrading characteristics; return/Sharpe uplift remains fragile and symbol/fold dependent.
 4. **Current best use:** continue single-strategy research testbed mode, prioritizing robustness and fold-stability over peak outcomes.
 
+---
+
+## 8) Research Journal Workflow (living document)
+
+This report is now the **iteration journal** for the project.
+
+After each research iteration, append a timestamped entry with:
+
+1. What changed
+2. Which runner/command was executed
+3. Key metric deltas (R1.2.3, R1.3, R1.4 snapshots)
+4. Artifact files that were updated
+
+Use:
+
+```bash
+python3 run_research_journal.py \
+  --title "Iteration <name>" \
+  --note "Short summary of what changed" \
+  --note "Any caveat or observed risk"
+```
+
+This auto-appends a new section with:
+
+- git branch + commit
+- current metric snapshots from `outputs/*.csv`
+- most recently modified artifacts
+
+If needed, pass `--allow-duplicate-commit` to force another entry at the same commit.
+
+
+## Journal Entry — 2026-03-25 04:55 UTC — Research Journal Enabled
+
+- Commit: `987aea7`
+- Branch: `cursor/forex-research-lab-prototype-0ac3`
+
+### Notes
+- Established append-only consolidated research journal workflow.
+- Future iterations should append entries via run_research_journal.py after each experiment.
+
+### Metric Snapshot (auto-generated)
+
+#### R1.2.3 deltas (gated - unfiltered)
+- AUDUSD: dSharpe=-0.7399, dExpectancy=-0.000260, dMaxDD=-0.0052, dTrades=-11
+- EURUSD: dSharpe=-0.6678, dExpectancy=-0.000238, dMaxDD=0.0053, dTrades=-29
+- GBPUSD: dSharpe=0.4830, dExpectancy=0.000007, dMaxDD=0.0135, dTrades=-37
+
+#### R1.3 / R1.3.1 fold deltas
+- R1.3:
+  - delta_sharpe: median=0.0000, pct_gt_0=0.133
+  - delta_expectancy: median=0.0000, pct_gt_0=0.156
+  - delta_max_dd: median=0.0000, pct_gt_0=0.222
+  - delta_trade_count: median=0.0000, pct_gt_0=0.000
+
+#### R1.4 fold deltas
+- R1.4:
+  - delta_sharpe: median=0.0000, pct_gt_0=0.067
+  - delta_expectancy: median=0.0000, pct_gt_0=0.067
+  - delta_max_dd: median=0.0000, pct_gt_0=0.067
+  - delta_trade_count: median=0.0000, pct_gt_0=0.000
+
+### Recently Updated Artifacts
+- `outputs/meta_stat_tests.csv` (2026-03-25 04:16 UTC)
+- `outputs/meta_feature_importance.csv` (2026-03-25 04:16 UTC)
+- `outputs/meta_gate_comparison.csv` (2026-03-25 04:16 UTC)
+- `outputs/meta_model_scores.csv` (2026-03-25 04:16 UTC)
+- `outputs/meta_feature_dataset.csv` (2026-03-25 04:16 UTC)
+- `outputs/meta_coverage_metrics.csv` (2026-03-25 04:16 UTC)
+- `outputs/charts/meta_calibration_curve.png` (2026-03-25 04:16 UTC)
+- `outputs/charts/meta_score_vs_return.png` (2026-03-25 04:16 UTC)
