@@ -59,6 +59,17 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Disable deterministic fallback scorer.",
     )
+    parser.add_argument(
+        "--enable-r15-rules",
+        action="store_true",
+        default=True,
+        help="Enable fixed R1.5 failure-removal rules (default: enabled).",
+    )
+    parser.add_argument(
+        "--disable-r15-rules",
+        action="store_true",
+        help="Disable fixed R1.5 failure-removal rules.",
+    )
     return parser
 
 
@@ -83,6 +94,7 @@ def main() -> None:
         label_quantile=args.label_quantile,
         meta_min_train_samples=args.meta_min_train_samples,
         allow_fallback_scorer=(args.allow_fallback_scorer and not args.disable_fallback_scorer),
+        enable_r15_rules=(args.enable_r15_rules and not args.disable_r15_rules),
     )
 
     print("R1.4.1 execution-layer run completed.")

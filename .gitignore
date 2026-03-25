@@ -50,6 +50,7 @@ outputs/*
 !outputs/r15_feature_separation.csv
 !outputs/r15_rule_candidates.csv
 !outputs/r15_rule_evaluation.csv
+!outputs/r15_rule_effectiveness.csv
 !outputs/charts/
 !outputs/charts/r14_threshold_vs_separation.png
 !outputs/charts/r14_percentile_vs_separation.png
