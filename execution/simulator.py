@@ -85,12 +85,16 @@ def run_backtest(
     signal: pd.Series,
     cost_model: CostModel,
     initial_capital: float = 100_000.0,
+    max_abs_position: float = 1.0,
 ) -> BacktestResult:
     if len(df) != len(signal):
         raise ValueError("Signal length must match df length.")
 
     close = df["close"]
-    raw_position = signal.reindex(df.index).fillna(0).clip(-1, 1)
+    max_pos = float(max_abs_position)
+    if max_pos <= 0:
+        raise ValueError("max_abs_position must be > 0.")
+    raw_position = signal.reindex(df.index).fillna(0).clip(-max_pos, max_pos)
     # No lookahead: signal at t is executed for return at t+1.
     position = raw_position.shift(1).fillna(0)
 

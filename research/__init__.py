@@ -37,6 +37,7 @@ from .strategy_spec import (
     render_strategy_spec_markdown,
     write_strategy_spec_outputs,
 )
+from .r14_execution_layer import R14ExecutionArtifacts, run_r14_execution_layer
 
 __all__ = [
     "bootstrap_returns",
@@ -79,4 +80,6 @@ __all__ = [
     "generate_strategy_spec",
     "render_strategy_spec_markdown",
     "write_strategy_spec_outputs",
+    "R14ExecutionArtifacts",
+    "run_r14_execution_layer",
 ]
