@@ -24,6 +24,7 @@ from .walk_forward import WalkForwardResult, run_walk_forward
 from .strategy_runner import run_strategy_research
 from .regime_diagnostics import run_regime_diagnostics
 from .regime_gated_runner import run_regime_gated_evaluation
+from .r14_execution_diagnostics import run_r14_execution_diagnostics
 from .promotion_framework import (
     PromotionArtifacts,
     PromotionThresholds,
@@ -71,6 +72,7 @@ __all__ = [
     "run_strategy_research",
     "run_regime_diagnostics",
     "run_regime_gated_evaluation",
+    "run_r14_execution_diagnostics",
     "PromotionThresholds",
     "SymbolPromotionResult",
     "PromotionArtifacts",
