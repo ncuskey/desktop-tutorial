@@ -9,6 +9,7 @@ from .switch_diagnostics import (
 )
 from .regime_gated_runner import run_regime_gated_evaluation
 from .r13_trend_gating import run_r13_trend_gating
+from .r14_meta_labeling import run_r14_meta_labeling
 from .tracking import ExperimentTracker
 from .v22_runner import V22RunArtifacts, run_v22_candidate_hardening
 from .walk_forward import WalkForwardResult, run_walk_forward
@@ -22,6 +23,7 @@ __all__ = [
     "compute_switches_per_1000_bars",
     "run_regime_gated_evaluation",
     "run_r13_trend_gating",
+    "run_r14_meta_labeling",
     "ExperimentTracker",
     "WalkForwardResult",
     "run_walk_forward",

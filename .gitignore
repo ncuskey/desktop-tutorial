@@ -18,6 +18,12 @@ outputs/*
 !outputs/gate_rule_export.md
 !outputs/gate_comparison_by_fold.csv
 !outputs/gate_coverage_metrics.csv
+!outputs/meta_feature_dataset.csv
+!outputs/meta_model_scores.csv
+!outputs/meta_gate_comparison.csv
+!outputs/meta_stat_tests.csv
+!outputs/meta_feature_importance.csv
+!outputs/meta_coverage_metrics.csv
 !outputs/charts/
 !outputs/charts/*.png
 data/sample_ohlcv.csv
