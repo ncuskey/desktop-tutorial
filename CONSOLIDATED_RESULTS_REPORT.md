@@ -306,3 +306,35 @@ If needed, pass `--allow-duplicate-commit` to force another entry at the same co
 - `outputs/meta_coverage_metrics.csv` (2026-03-25 04:16 UTC)
 - `outputs/charts/meta_calibration_curve.png` (2026-03-25 04:16 UTC)
 - `outputs/charts/meta_score_vs_return.png` (2026-03-25 04:16 UTC)
+
+## Journal Entry — 2026-03-25 06:14 UTC — R1.4.1 Early Confirmation Execution Layer
+
+- Commit: `ca116c7`
+- Branch: `main`
+
+### Notes
+- Implemented execution-time early confirmation decisions (exit/continue/scale) with fold-local WF-safe training.
+- Generated r14_execution_* outputs and validated conditional pass/fail return separation.
+
+### Metric Snapshot (auto-generated)
+
+#### R1.2.3 deltas (gated - unfiltered)
+- AUDUSD: dSharpe=-0.0701, dExpectancy=-0.000436, dMaxDD=0.0016, dTrades=-1
+- EURUSD: dSharpe=-1.5428, dExpectancy=-0.000681, dMaxDD=0.0027, dTrades=-7
+- GBPUSD: dSharpe=-0.9748, dExpectancy=-0.001514, dMaxDD=0.0012, dTrades=0
+
+#### R1.3 / R1.3.1 fold deltas
+- R1.3: not available
+
+#### R1.4 fold deltas
+- R1.4: not available
+
+### Recently Updated Artifacts
+- `outputs/r14_execution_comparison.csv` (2026-03-25 05:38 UTC)
+- `outputs/r14_execution_coverage.csv` (2026-03-25 05:38 UTC)
+- `outputs/r14_execution_conditional_stats.csv` (2026-03-25 05:38 UTC)
+- `outputs/r14_execution_fold_results.csv` (2026-03-25 05:38 UTC)
+- `outputs/v22_candidate_equity.png` (2026-03-25 05:20 UTC)
+- `outputs/v22_trade_distribution.csv` (2026-03-25 05:20 UTC)
+- `outputs/v23_tail_metrics.csv` (2026-03-25 05:20 UTC)
+- `outputs/v22_candidate_summary.csv` (2026-03-25 05:20 UTC)
