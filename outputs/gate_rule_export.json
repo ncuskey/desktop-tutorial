@@ -1,7 +1,14 @@
 {
   "strategy": "TrendBreakout_V2",
-  "gate_mode": "score_threshold",
-  "deterministic_rule": "ALLOW if model_score >= train_fold_score_quantile_0.70",
+  "gate_mode": "rank_based_selection",
+  "deterministic_rule": "ALLOW entry if selected by fold-local rank gate: top-K-percent union top-N minimum, with deterministic expansion to satisfy minimum density",
+  "rank_selection_config": {
+    "top_k_percent": 0.3,
+    "min_trades_per_fold": 5,
+    "target_pass_rate_min": 0.25,
+    "target_pass_rate_max": 0.4,
+    "hybrid_tsmom_enabled": false
+  },
   "score_quantile": 0.7,
   "threshold_summary": {
     "count": 45,

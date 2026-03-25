@@ -1,8 +1,8 @@
 # Gate Rule Export (R1.3)
 
 - Strategy: `TrendBreakout_V2`
-- Gate mode: `score_threshold`
-- Deterministic decision: `ALLOW if model_score >= train_fold_score_quantile_0.70`
+- Gate mode: `rank_based_selection`
+- Deterministic decision: `ALLOW entry if selected by fold-local rank gate: top-K-percent union top-N minimum, with deterministic expansion to satisfy minimum density`
 
 ## Threshold Stability
 - Quantile target: `0.7`

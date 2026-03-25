@@ -254,7 +254,11 @@ def _entry_mask_from_signal(signal: pd.Series) -> pd.Series:
     return ((s != 0.0) & (s != prev)).astype(bool)
 
 
-def _apply_entry_gate_to_signal(raw_signal: pd.Series, entry_allow: pd.Series) -> pd.Series:
+def _apply_entry_gate_to_signal(
+    raw_signal: pd.Series,
+    entry_allow: pd.Series,
+    min_trades_per_fold: int = 5,
+) -> pd.Series:
     raw = pd.to_numeric(raw_signal, errors="coerce").fillna(0.0).astype(float)
     allow = entry_allow.fillna(False).astype(bool)
     out = pd.Series(0.0, index=raw.index, dtype=float)
@@ -281,6 +285,20 @@ def _apply_entry_gate_to_signal(raw_signal: pd.Series, entry_allow: pd.Series) -
             out.iloc[i] = raw_i
         else:
             out.iloc[i] = 0.0
+    # Density stabilization: if no or too-few entries would remain, progressively
+    # relax by adding earliest blocked entries until the fold reaches minimum trade count.
+    gated_entries = _entry_mask_from_signal(out).sum()
+    if gated_entries < max(1, int(min_trades_per_fold)):
+        needed = max(1, int(min_trades_per_fold)) - int(gated_entries)
+        if needed > 0:
+            raw_entries = _entry_mask_from_signal(raw)
+            blocked = raw_entries & (~_entry_mask_from_signal(out))
+            blocked_idx = blocked[blocked].index.tolist()
+            if blocked_idx:
+                promote_idx = blocked_idx[:needed]
+                allow_relaxed = entry_allow.copy()
+                allow_relaxed.loc[promote_idx] = True
+                out = _apply_entry_gate_to_signal(raw, allow_relaxed, min_trades_per_fold=0)
     return out
 
 
@@ -558,6 +576,112 @@ def _apply_guard_rule(model: dict[str, Any], feature_df: pd.DataFrame) -> pd.Ser
     return (hits >= min_hits).fillna(False)
 
 
+def _percentile_threshold(scores: pd.Series, quantile: float) -> float:
+    s = pd.to_numeric(scores, errors="coerce").dropna()
+    if s.empty:
+        return np.nan
+    return float(np.nanquantile(s.to_numpy(dtype=float), quantile))
+
+
+def _select_entries_by_rank(
+    scores: pd.Series,
+    feature_df: pd.DataFrame,
+    *,
+    min_trades_per_fold: int,
+    top_k_percent: float,
+    top_n_count: int,
+    target_pass_rate_min: float,
+    target_pass_rate_max: float,
+    hybrid_tsmom_enabled: bool,
+    train_tsmom48_median: float,
+) -> tuple[pd.Series, dict[str, Any]]:
+    idx = scores.index
+    allow = pd.Series(False, index=idx, dtype=bool)
+    n = int(len(scores))
+    if n <= 0:
+        return allow, {
+            "selected_count": 0,
+            "effective_trade_coverage": 0.0,
+            "selection_expansion_events": 0,
+            "fallback_to_baseline": False,
+            "fold_trade_viability": False,
+        }
+
+    s = pd.to_numeric(scores, errors="coerce").fillna(-np.inf)
+    ranked_idx = s.sort_values(ascending=False, kind="stable").index.tolist()
+
+    min_required = min(max(1, int(min_trades_per_fold)), n)
+    k_pct = max(1, int(np.ceil(n * float(top_k_percent))))
+    k_topn = min(max(1, int(top_n_count)), n)
+    k_target_min = max(1, int(np.ceil(n * float(target_pass_rate_min))))
+    k_target_max = max(1, int(np.floor(n * float(target_pass_rate_max))))
+    k_base = max(k_pct, k_topn)
+    k = min(max(k_base, 1), n)
+
+    expansion_events = 0
+    selected = ranked_idx[:k]
+    hybrid_relaxed = False
+
+    if hybrid_tsmom_enabled and "tsmom_48" in feature_df.columns and np.isfinite(train_tsmom48_median):
+        cond = pd.to_numeric(feature_df["tsmom_48"], errors="coerce") > float(train_tsmom48_median)
+        selected = [i for i in selected if bool(cond.reindex([i]).fillna(False).iloc[0])]
+        while len(selected) < min_required and k < n:
+            k += 1
+            expansion_events += 1
+            candidate = ranked_idx[:k]
+            selected = [i for i in candidate if bool(cond.reindex([i]).fillna(False).iloc[0])]
+        if len(selected) < min_required:
+            # Relax hybrid constraint to satisfy minimum fold density.
+            selected = ranked_idx[:max(min_required, k_target_min, k)]
+            hybrid_relaxed = True
+            expansion_events += 1
+    else:
+        while len(selected) < min_required and k < n:
+            k += 1
+            expansion_events += 1
+            selected = ranked_idx[:k]
+
+    # Enforce target minimum pass-rate (deterministic expansion).
+    min_target_count = min(max(1, k_target_min), n)
+    while len(selected) < min_target_count and k < n:
+        k += 1
+        expansion_events += 1
+        if hybrid_tsmom_enabled and "tsmom_48" in feature_df.columns and np.isfinite(train_tsmom48_median):
+            cond = pd.to_numeric(feature_df["tsmom_48"], errors="coerce") > float(train_tsmom48_median)
+            selected = [i for i in ranked_idx[:k] if bool(cond.reindex([i]).fillna(False).iloc[0])]
+        else:
+            selected = ranked_idx[:k]
+
+    # Respect target maximum pass-rate when feasible and still viable.
+    max_target_count = min(max(1, k_target_max), n)
+    if len(selected) > max_target_count and max_target_count >= min_required:
+        selected = ranked_idx[:max_target_count]
+
+    if len(selected) <= 0:
+        # Mandatory safety fallback: preserve baseline behavior for the fold.
+        allow[:] = True
+        selected_count = n
+        fallback = True
+    else:
+        allow.loc[selected] = True
+        selected_count = int(len(selected))
+        fallback = False
+
+    return allow, {
+        "selected_count": selected_count,
+        "effective_trade_coverage": float(selected_count / max(n, 1)),
+        "selection_expansion_events": int(expansion_events),
+        "fallback_to_baseline": bool(fallback),
+        "fold_trade_viability": bool(selected_count >= min_required),
+        "rank_top_k_percent": float(top_k_percent),
+        "rank_top_n_count": int(k_topn),
+        "rank_initial_k": int(k_base),
+        "rank_final_k": int(k),
+        "rank_min_required": int(min_required),
+        "hybrid_relaxed": bool(hybrid_relaxed),
+    }
+
+
 def _summarize_feature_bins(
     trade_df: pd.DataFrame,
     output_charts_dir: Path,
@@ -671,6 +795,37 @@ def _plot_score_decile_uplift(gate_model_scores: pd.DataFrame, output_path: Path
     ax2 = ax1.twinx()
     ax2.plot(merged["score_decile"].astype(str), merged["win_rate"], color="#F58518", marker="o")
     ax2.set_ylabel("Win Rate")
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=150)
+    plt.close(fig)
+
+
+def _plot_trade_rank_vs_return(gate_model_scores: pd.DataFrame, output_path: Path) -> None:
+    local = gate_model_scores[
+        (gate_model_scores["split"] == "test") & (gate_model_scores["model"] == "logistic_primary")
+    ].copy()
+    if local.empty:
+        return
+    local["predicted_score"] = pd.to_numeric(local["predicted_score"], errors="coerce")
+    local["actual_return"] = pd.to_numeric(local["actual_return"], errors="coerce")
+    local = local.dropna(subset=["predicted_score", "actual_return"])
+    if len(local) < 20:
+        return
+
+    local["score_rank_pct"] = local["predicted_score"].rank(pct=True, method="average") * 100.0
+    # 20 bins of 5 percentile points each.
+    local["rank_bin"] = (np.floor(local["score_rank_pct"] / 5.0) * 5.0).clip(0.0, 95.0)
+    grouped = local.groupby("rank_bin", dropna=True)["actual_return"].mean().reset_index()
+    if grouped.empty:
+        return
+
+    fig, ax = plt.subplots(figsize=(8.2, 4.2))
+    ax.plot(grouped["rank_bin"], grouped["actual_return"], marker="o", color="#4C78A8")
+    ax.axhline(0.0, color="black", linestyle="--", linewidth=1.0)
+    ax.set_title("Trade rank percentile vs average return")
+    ax.set_xlabel("Score percentile bin")
+    ax.set_ylabel("Average return")
+    ax.grid(alpha=0.2)
     fig.tight_layout()
     fig.savefig(output_path, dpi=150)
     plt.close(fig)
@@ -848,6 +1003,11 @@ def _export_gate_rules(
     fold_models: list[dict[str, Any]],
     strategy: str,
     score_quantile: float,
+    top_k_percent: float,
+    min_trades_per_fold: int,
+    target_pass_rate_min: float,
+    target_pass_rate_max: float,
+    hybrid_tsmom_enabled: bool,
     output_json: Path,
     output_md: Path,
 ) -> dict[str, Any]:
@@ -875,8 +1035,18 @@ def _export_gate_rules(
 
     rule_export = {
         "strategy": strategy,
-        "gate_mode": "score_threshold",
-        "deterministic_rule": f"ALLOW if model_score >= train_fold_score_quantile_{score_quantile:.2f}",
+        "gate_mode": "rank_based_selection",
+        "deterministic_rule": (
+            "ALLOW entry if selected by fold-local rank gate: "
+            "top-K-percent union top-N minimum, with deterministic expansion to satisfy minimum density"
+        ),
+        "rank_selection_config": {
+            "top_k_percent": float(top_k_percent),
+            "min_trades_per_fold": int(min_trades_per_fold),
+            "target_pass_rate_min": float(target_pass_rate_min),
+            "target_pass_rate_max": float(target_pass_rate_max),
+            "hybrid_tsmom_enabled": bool(hybrid_tsmom_enabled),
+        },
         "score_quantile": score_quantile,
         "threshold_summary": {
             "count": int(len(thresholds)),
@@ -902,6 +1072,11 @@ def run_r13_trend_gating(
     timeframe: str = "H1",
     source_csv: str | Path | None = None,
     score_quantile: float = 0.70,
+    top_k_percent: float = 0.30,
+    min_trades_per_fold: int = 5,
+    target_pass_rate_min: float = 0.25,
+    target_pass_rate_max: float = 0.40,
+    hybrid_tsmom_enabled: bool = False,
 ) -> R13Artifacts:
     if strategy != "TrendBreakout_V2":
         raise ValueError("R1.3 currently supports strategy='TrendBreakout_V2' only.")
@@ -1000,18 +1175,105 @@ def run_r13_trend_gating(
                             "predicted_score": _safe_float(train_scores.iloc[i], default=np.nan),
                             "actual_return": _safe_float(row["return"], default=np.nan),
                             "actual_win": int(row["win"]),
-                            "allow_trade": int(train_scores.iloc[i] >= model["threshold"]),
+                            "allow_trade": 0,
                             "threshold": _safe_float(model["threshold"], default=np.nan),
                         }
                     )
 
-            if test_entry_idx.size > 0 and model.get("fitted", False):
+            if test_entry_idx.size > 0:
                 test_entry_features = test_features.loc[test_entry_idx, FEATURE_COLUMNS]
-                test_entry_scores = _score_with_model(model, test_entry_features)
-                allow_entries = (test_entry_scores >= model["threshold"]).astype(bool)
+                train_tsmom_median = _safe_float(
+                    pd.to_numeric(train_trade_df.get("tsmom_48"), errors="coerce").median(),
+                    default=np.nan,
+                )
+                if model.get("fitted", False):
+                    test_entry_scores = _score_with_model(model, test_entry_features)
+                    train_entry_scores = (
+                        _score_with_model(model, train_trade_df[FEATURE_COLUMNS])
+                        if not train_trade_df.empty
+                        else pd.Series(dtype=float)
+                    )
+                else:
+                    # Non-fitted fold: deterministic fallback rank by a trend proxy.
+                    test_entry_scores = pd.to_numeric(
+                        test_entry_features.get("tsmom_avg"), errors="coerce"
+                    ).fillna(0.0)
+                    train_entry_scores = pd.to_numeric(
+                        train_trade_df.get("tsmom_avg"), errors="coerce"
+                    ).fillna(0.0)
+
+                allow_entries, selection_diag = _select_entries_by_rank(
+                    scores=test_entry_scores,
+                    feature_df=test_entry_features,
+                    min_trades_per_fold=min_trades_per_fold,
+                    top_k_percent=top_k_percent,
+                    top_n_count=min_trades_per_fold,
+                    target_pass_rate_min=target_pass_rate_min,
+                    target_pass_rate_max=target_pass_rate_max,
+                    hybrid_tsmom_enabled=hybrid_tsmom_enabled,
+                    train_tsmom48_median=train_tsmom_median,
+                )
+                train_allow, _ = _select_entries_by_rank(
+                    scores=train_entry_scores,
+                    feature_df=train_trade_df[FEATURE_COLUMNS] if not train_trade_df.empty else pd.DataFrame(columns=FEATURE_COLUMNS),
+                    min_trades_per_fold=min_trades_per_fold,
+                    top_k_percent=top_k_percent,
+                    top_n_count=min_trades_per_fold,
+                    target_pass_rate_min=target_pass_rate_min,
+                    target_pass_rate_max=target_pass_rate_max,
+                    hybrid_tsmom_enabled=hybrid_tsmom_enabled,
+                    train_tsmom48_median=train_tsmom_median,
+                )
+                train_threshold = _percentile_threshold(train_entry_scores, score_quantile)
+                test_threshold = _percentile_threshold(test_entry_scores, score_quantile)
+                threshold_drift = (
+                    float(test_threshold - train_threshold)
+                    if np.isfinite(train_threshold) and np.isfinite(test_threshold)
+                    else np.nan
+                )
+
+                if bool(selection_diag.get("fallback_to_baseline", False)):
+                    allow_entries = pd.Series(True, index=test_entry_idx, dtype=bool)
+                    selection_diag["selected_count"] = int(len(test_entry_idx))
+                    selection_diag["effective_trade_coverage"] = 1.0
             else:
-                test_entry_scores = pd.Series(1.0, index=test_entry_idx, dtype=float)
-                allow_entries = pd.Series(True, index=test_entry_idx, dtype=bool)
+                test_entry_scores = pd.Series(dtype=float)
+                allow_entries = pd.Series(dtype=bool)
+                train_allow = pd.Series(dtype=bool)
+                selection_diag = {
+                    "selected_count": 0,
+                    "effective_trade_coverage": 0.0,
+                    "selection_expansion_events": 0,
+                    "fallback_to_baseline": False,
+                    "fold_trade_viability": False,
+                }
+                train_threshold = np.nan
+                test_threshold = np.nan
+                threshold_drift = np.nan
+
+            if not train_trade_df.empty:
+                train_trade_df = train_trade_df.reset_index(drop=True)
+                train_scores_for_rows = (
+                    _score_with_model(model, train_trade_df[FEATURE_COLUMNS])
+                    if model.get("fitted", False)
+                    else pd.to_numeric(train_trade_df.get("tsmom_avg"), errors="coerce").fillna(0.0)
+                )
+                for i, row in train_trade_df.iterrows():
+                    allow_train = int(bool(train_allow.iloc[i])) if i < len(train_allow) else 0
+                    score_rows.append(
+                        {
+                            "symbol": symbol,
+                            "fold_id": fold_id,
+                            "split": "train",
+                            "model": "logistic_primary",
+                            "entry_time": row["entry_time"],
+                            "predicted_score": _safe_float(train_scores_for_rows.iloc[i], default=np.nan),
+                            "actual_return": _safe_float(row["return"], default=np.nan),
+                            "actual_win": int(row["win"]),
+                            "allow_trade": allow_train,
+                            "threshold": _safe_float(train_threshold, default=np.nan),
+                        }
+                    )
 
             for _, row in test_trade_df.iterrows():
                 entry_time = pd.to_datetime(row["entry_time"], utc=True, errors="coerce")
@@ -1035,7 +1297,7 @@ def run_r13_trend_gating(
                         "actual_return": _safe_float(row["return"], default=np.nan),
                         "actual_win": int(row["win"]),
                         "allow_trade": allow_val,
-                        "threshold": _safe_float(model.get("threshold"), default=np.nan),
+                        "threshold": _safe_float(test_threshold, default=np.nan),
                     }
                 )
 
@@ -1063,10 +1325,15 @@ def run_r13_trend_gating(
 
             if model.get("fitted", False):
                 test_bar_scores = _score_with_model(model, test_features[FEATURE_COLUMNS])
-                bar_allow = test_bar_scores >= model["threshold"]
+                bar_allow = test_bar_scores >= test_threshold if np.isfinite(test_threshold) else pd.Series(
+                    True, index=test_bar_scores.index, dtype=bool
+                )
             else:
-                test_bar_scores = pd.Series(1.0, index=test_features.index, dtype=float)
-                bar_allow = pd.Series(True, index=test_features.index, dtype=bool)
+                test_bar_scores = pd.to_numeric(test_features.get("tsmom_avg"), errors="coerce").fillna(0.0)
+                bar_threshold = _percentile_threshold(test_bar_scores, score_quantile)
+                bar_allow = test_bar_scores >= bar_threshold if np.isfinite(bar_threshold) else pd.Series(
+                    True, index=test_bar_scores.index, dtype=bool
+                )
 
             entry_pass_rate = float(allow_entries.mean()) if len(allow_entries) > 0 else 0.0
             trades_per_fold = float(len(gated_bt.trades))
@@ -1077,6 +1344,12 @@ def run_r13_trend_gating(
                     "allowed_bar_pct": float(bar_allow.mean()),
                     "entry_pass_rate": entry_pass_rate,
                     "trades_per_fold": trades_per_fold,
+                    "effective_trade_coverage": float(selection_diag.get("effective_trade_coverage", 0.0)),
+                    "fold_trade_viability": bool(selection_diag.get("fold_trade_viability", False)),
+                    "selection_expansion_events": int(selection_diag.get("selection_expansion_events", 0)),
+                    "train_percentile_threshold": _safe_float(train_threshold, default=np.nan),
+                    "test_percentile_threshold": _safe_float(test_threshold, default=np.nan),
+                    "threshold_drift": _safe_float(threshold_drift, default=np.nan),
                     "zero_trade_fold": float(trades_per_fold <= 0),
                 }
             )
@@ -1100,6 +1373,7 @@ def run_r13_trend_gating(
                     "delta_max_dd": float(gated_metrics["MaxDrawdown"] - baseline_metrics["MaxDrawdown"]),
                     "baseline_trade_count": float(baseline_metrics["TradeCount"]),
                     "gated_trade_count": float(gated_metrics["TradeCount"]),
+                    "gated_trades_per_fold": float(gated_metrics["TradeCount"]),
                     "delta_trade_count": float(
                         gated_metrics["TradeCount"] - baseline_metrics["TradeCount"]
                     ),
@@ -1127,6 +1401,12 @@ def run_r13_trend_gating(
                     "allowed_bar_pct": float(g["allowed_bar_pct"].mean()),
                     "entry_pass_rate": float(g["entry_pass_rate"].mean()),
                     "trades_per_fold": float(g["trades_per_fold"].mean()),
+                    "effective_trade_coverage": float(g["effective_trade_coverage"].mean()),
+                    "fold_trade_viability": float(g["fold_trade_viability"].mean()),
+                    "selection_expansion_events": float(g["selection_expansion_events"].sum()),
+                    "train_percentile_threshold": float(g["train_percentile_threshold"].mean()),
+                    "test_percentile_threshold": float(g["test_percentile_threshold"].mean()),
+                    "threshold_drift": float(g["threshold_drift"].mean()),
                     "zero_trade_fold": float(g["zero_trade_fold"].mean()),
                 }
             )
@@ -1137,6 +1417,12 @@ def run_r13_trend_gating(
                 "allowed_bar_pct": float(gate_coverage["allowed_bar_pct"].mean()),
                 "entry_pass_rate": float(gate_coverage["entry_pass_rate"].mean()),
                 "trades_per_fold": float(gate_coverage["trades_per_fold"].mean()),
+                "effective_trade_coverage": float(gate_coverage["effective_trade_coverage"].mean()),
+                "fold_trade_viability": float(gate_coverage["fold_trade_viability"].mean()),
+                "selection_expansion_events": float(gate_coverage["selection_expansion_events"].sum()),
+                "train_percentile_threshold": float(gate_coverage["train_percentile_threshold"].mean()),
+                "test_percentile_threshold": float(gate_coverage["test_percentile_threshold"].mean()),
+                "threshold_drift": float(gate_coverage["threshold_drift"].mean()),
                 "zero_trade_fold": float(gate_coverage["zero_trade_fold"].mean()),
             }
         )
@@ -1174,6 +1460,7 @@ def run_r13_trend_gating(
     )
 
     _plot_score_decile_uplift(gate_model_scores, charts_dir / "score_deciles_uplift.png")
+    _plot_trade_rank_vs_return(gate_model_scores, charts_dir / "trade_rank_vs_return.png")
     _plot_fold_uplift_boxplot(gate_comparison_by_fold, charts_dir / "fold_uplift_boxplot.png")
     _compute_ks_drift(
         trade_feature_df=trade_feature_dataset,
@@ -1189,6 +1476,11 @@ def run_r13_trend_gating(
         fold_models=fold_models,
         strategy=strategy,
         score_quantile=score_quantile,
+        top_k_percent=top_k_percent,
+        min_trades_per_fold=min_trades_per_fold,
+        target_pass_rate_min=target_pass_rate_min,
+        target_pass_rate_max=target_pass_rate_max,
+        hybrid_tsmom_enabled=hybrid_tsmom_enabled,
         output_json=out_dir / "gate_rule_export.json",
         output_md=out_dir / "gate_rule_export.md",
     )
