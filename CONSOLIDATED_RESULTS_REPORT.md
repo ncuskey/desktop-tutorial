@@ -370,3 +370,35 @@ If needed, pass `--allow-duplicate-commit` to force another entry at the same co
 - `outputs/r14_execution_coverage.csv` (2026-03-25 19:34 UTC)
 - `outputs/r15_rule_effectiveness.csv` (2026-03-25 19:34 UTC)
 - `outputs/r14_execution_conditional_stats.csv` (2026-03-25 19:34 UTC)
+
+## Journal Entry — 2026-03-25 19:37 UTC — R1.6 Expectancy Metric Correction
+
+- Commit: `29f68e9`
+- Branch: `main`
+
+### Notes
+- Corrected execution comparison expectancy fields to use trade-level realized returns
+- Re-ran sizing-only evaluation and refreshed r14 execution comparison outputs
+
+### Metric Snapshot (auto-generated)
+
+#### R1.2.3 deltas (gated - unfiltered)
+- AUDUSD: dSharpe=-0.0701, dExpectancy=-0.000436, dMaxDD=0.0016, dTrades=-1
+- EURUSD: dSharpe=-1.5428, dExpectancy=-0.000681, dMaxDD=0.0027, dTrades=-7
+- GBPUSD: dSharpe=-0.9748, dExpectancy=-0.001514, dMaxDD=0.0012, dTrades=0
+
+#### R1.3 / R1.3.1 fold deltas
+- R1.3: not available
+
+#### R1.4 fold deltas
+- R1.4: not available
+
+### Recently Updated Artifacts
+- `outputs/r16_size_vs_return.csv` (2026-03-25 19:37 UTC)
+- `outputs/r153_score_distribution.csv` (2026-03-25 19:37 UTC)
+- `outputs/r153_score_vs_return.csv` (2026-03-25 19:37 UTC)
+- `outputs/r16_size_distribution.csv` (2026-03-25 19:37 UTC)
+- `outputs/r14_execution_comparison.csv` (2026-03-25 19:37 UTC)
+- `outputs/r14_execution_coverage.csv` (2026-03-25 19:37 UTC)
+- `outputs/r15_rule_effectiveness.csv` (2026-03-25 19:37 UTC)
+- `outputs/r14_execution_conditional_stats.csv` (2026-03-25 19:37 UTC)

@@ -879,6 +879,8 @@ def run_r14_execution_layer(
         rejected_returns: list[float] = []
         baseline_fail_returns: list[float] = []
         baseline_pass_returns: list[float] = []
+        baseline_trade_returns: list[float] = []
+        execution_trade_returns: list[float] = []
         loss_avoided_list: list[float] = []
         missed_profit_list: list[float] = []
         symbol_rule_removed_returns: list[float] = []
@@ -1118,6 +1120,12 @@ def run_r14_execution_layer(
                     missed_profit_list.extend(pd.to_numeric(missed, errors="coerce").dropna().tolist())
                 baseline_pass_returns.extend(pass_ret.dropna().tolist())
                 baseline_fail_returns.extend(fail_ret.dropna().tolist())
+                baseline_trade_returns.extend(
+                    pd.to_numeric(seg_df["baseline_return"], errors="coerce").dropna().tolist()
+                )
+                execution_trade_returns.extend(
+                    pd.to_numeric(seg_df["execution_return"], errors="coerce").dropna().tolist()
+                )
                 survivor_returns.extend(
                     seg_df.loc[~rejected_mask, "execution_return"].dropna().tolist()
                 )
@@ -1208,6 +1216,12 @@ def run_r14_execution_layer(
         eq_exec = 100_000.0 * (1.0 + stitched_exec).cumprod()
         mt_base = compute_metrics(stitched_base, eq_base, pd.DataFrame(), timeframe=timeframe)
         mt_exec = compute_metrics(stitched_exec, eq_exec, pd.DataFrame(), timeframe=timeframe)
+        baseline_expectancy_symbol = (
+            float(np.mean(baseline_trade_returns)) if baseline_trade_returns else np.nan
+        )
+        execution_expectancy_symbol = (
+            float(np.mean(execution_trade_returns)) if execution_trade_returns else np.nan
+        )
 
         symbol_variant_rows.extend(
             [
@@ -1215,7 +1229,7 @@ def run_r14_execution_layer(
                     "symbol": symbol,
                     "variant": "baseline",
                     "Sharpe": _safe_float(mt_base.get("Sharpe")),
-                    "Expectancy": _safe_float(mt_base.get("Expectancy")),
+                    "Expectancy": baseline_expectancy_symbol,
                     "MaxDD": _safe_float(mt_base.get("MaxDrawdown")),
                     "TradeCount": float(total_trades),
                     "EarlyExitsCount": 0,
@@ -1229,14 +1243,14 @@ def run_r14_execution_layer(
                     "AvgReturnSurvivors": float(np.mean(baseline_pass_returns)) if baseline_pass_returns else np.nan,
                     "AvgReturnRejected": np.nan,
                     "avg_position_size": 1.0,
-                    "weighted_expectancy": _safe_float(mt_base.get("Expectancy")),
+                    "weighted_expectancy": baseline_expectancy_symbol,
                     "weighted_return": float(pd.to_numeric(stitched_base, errors="coerce").mean()),
                 },
                 {
                     "symbol": symbol,
                     "variant": "execution_layer",
                     "Sharpe": _safe_float(mt_exec.get("Sharpe")),
-                    "Expectancy": _safe_float(mt_exec.get("Expectancy")),
+                    "Expectancy": execution_expectancy_symbol,
                     "MaxDD": _safe_float(mt_exec.get("MaxDrawdown")),
                     "TradeCount": float(total_trades - total_removed_trades),
                     "EarlyExitsCount": int(total_early_exits),
@@ -1250,7 +1264,7 @@ def run_r14_execution_layer(
                     "AvgReturnSurvivors": float(np.mean(survivor_returns)) if survivor_returns else np.nan,
                     "AvgReturnRejected": float(np.mean(rejected_returns)) if rejected_returns else np.nan,
                     "avg_position_size": float(total_position_size / max(total_position_size_count, 1)),
-                    "weighted_expectancy": _safe_float(mt_exec.get("Expectancy")),
+                    "weighted_expectancy": execution_expectancy_symbol,
                     "weighted_return": float(pd.to_numeric(stitched_exec, errors="coerce").mean()),
                 },
             ]
