@@ -26,6 +26,7 @@ from .regime_diagnostics import run_regime_diagnostics
 from .regime_gated_runner import run_regime_gated_evaluation
 from .r14_execution_diagnostics import run_r14_execution_diagnostics
 from .r14_tail_selection import run_r14_tail_selection
+from .r15_failure_decomposition import run_r15_failure_decomposition
 from .promotion_framework import (
     PromotionArtifacts,
     PromotionThresholds,
@@ -75,6 +76,7 @@ __all__ = [
     "run_regime_gated_evaluation",
     "run_r14_execution_diagnostics",
     "run_r14_tail_selection",
+    "run_r15_failure_decomposition",
     "PromotionThresholds",
     "SymbolPromotionResult",
     "PromotionArtifacts",
