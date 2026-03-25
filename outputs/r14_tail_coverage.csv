@@ -1,0 +1,5 @@
+symbol,tail_pass_rate,avg_trades_per_fold,total_trades,trades_evaluated,avg_tail_trades_per_fold,early_exit_count
+EURUSD,1.0,0.8,12,3,0.2,0
+GBPUSD,1.0,0.3333333333333333,5,2,0.13333333333333333,0
+AUDUSD,1.0,0.6,9,1,0.06666666666666667,0
+ALL,1.0,0.5777777777777778,26,6,0.13333333333333333,0

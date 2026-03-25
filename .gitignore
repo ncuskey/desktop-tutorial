@@ -42,10 +42,16 @@ outputs/*
 !outputs/r14_execution_percentile_sweep.csv
 !outputs/r14_execution_score_bins.csv
 !outputs/r14_execution_separation_tests.csv
+!outputs/r14_tail_comparison.csv
+!outputs/r14_tail_fold_results.csv
+!outputs/r14_tail_stability.csv
+!outputs/r14_tail_coverage.csv
 !outputs/charts/
 !outputs/charts/r14_threshold_vs_separation.png
 !outputs/charts/r14_percentile_vs_separation.png
 !outputs/charts/r14_score_monotonicity.png
+!outputs/charts/r14_tail_fold_returns.png
+!outputs/charts/r14_tail_vs_baseline.png
 !outputs/TrendBreakout_V2/
 !outputs/TrendBreakout_V2/*/
 !outputs/TrendBreakout_V2/*/strategy_research_summary.csv
