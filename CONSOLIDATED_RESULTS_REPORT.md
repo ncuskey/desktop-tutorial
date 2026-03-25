@@ -338,3 +338,35 @@ If needed, pass `--allow-duplicate-commit` to force another entry at the same co
 - `outputs/v22_trade_distribution.csv` (2026-03-25 05:20 UTC)
 - `outputs/v23_tail_metrics.csv` (2026-03-25 05:20 UTC)
 - `outputs/v22_candidate_summary.csv` (2026-03-25 05:20 UTC)
+
+## Journal Entry — 2026-03-25 19:35 UTC — R1.6 Dynamic Position Sizing
+
+- Commit: `8135370`
+- Branch: `main`
+
+### Notes
+- Integrated confidence-based sizing at early-evaluation step with no trade filtering
+- Added size diagnostics outputs and weighted expectancy/return reporting
+
+### Metric Snapshot (auto-generated)
+
+#### R1.2.3 deltas (gated - unfiltered)
+- AUDUSD: dSharpe=-0.0701, dExpectancy=-0.000436, dMaxDD=0.0016, dTrades=-1
+- EURUSD: dSharpe=-1.5428, dExpectancy=-0.000681, dMaxDD=0.0027, dTrades=-7
+- GBPUSD: dSharpe=-0.9748, dExpectancy=-0.001514, dMaxDD=0.0012, dTrades=0
+
+#### R1.3 / R1.3.1 fold deltas
+- R1.3: not available
+
+#### R1.4 fold deltas
+- R1.4: not available
+
+### Recently Updated Artifacts
+- `outputs/r16_size_vs_return.csv` (2026-03-25 19:34 UTC)
+- `outputs/r153_score_distribution.csv` (2026-03-25 19:34 UTC)
+- `outputs/r153_score_vs_return.csv` (2026-03-25 19:34 UTC)
+- `outputs/r16_size_distribution.csv` (2026-03-25 19:34 UTC)
+- `outputs/r14_execution_comparison.csv` (2026-03-25 19:34 UTC)
+- `outputs/r14_execution_coverage.csv` (2026-03-25 19:34 UTC)
+- `outputs/r15_rule_effectiveness.csv` (2026-03-25 19:34 UTC)
+- `outputs/r14_execution_conditional_stats.csv` (2026-03-25 19:34 UTC)
